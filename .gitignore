@@ -1,0 +1,29 @@
+# Binaries
+wikigraph
+*.exe
+
+# Database
+*.db
+*.sqlite
+
+# Dependencies
+vendor/
+
+# Python
+python/__pycache__/
+python/.venv/
+*.pyc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
