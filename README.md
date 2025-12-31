@@ -14,7 +14,39 @@ A tool that crawls Wikipedia, builds a knowledge graph of connections between pe
 
 ## Getting Started
 
-TODO
+### Building
+
+**Windows (PowerShell):**
+```powershell
+.\build.ps1 build
+```
+
+**Linux/macOS:**
+```bash
+make build
+```
+
+Or use Go directly:
+```bash
+go build -o wikigraph ./cmd/server
+```
+
+### Running
+
+**Windows (PowerShell):**
+```powershell
+.\build.ps1 run
+```
+
+**Linux/macOS:**
+```bash
+make run
+```
+
+Or use Go directly:
+```bash
+go run ./cmd/server
+```
 
 ## License
 
