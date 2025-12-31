@@ -18,12 +18,12 @@ A tool that crawls Wikipedia, builds a knowledge graph of connections between pe
 
 **Windows (PowerShell):**
 ```powershell
-.\build.ps1 build
+.\scripts\build.ps1 build
 ```
 
 **Linux/macOS:**
 ```bash
-make build
+make -f scripts/Makefile build
 ```
 
 Or use Go directly:
@@ -35,12 +35,12 @@ go build -o wikigraph ./cmd/server
 
 **Windows (PowerShell):**
 ```powershell
-.\build.ps1 run
+.\scripts\build.ps1 run
 ```
 
 **Linux/macOS:**
 ```bash
-make run
+make -f scripts/Makefile run
 ```
 
 Or use Go directly:
