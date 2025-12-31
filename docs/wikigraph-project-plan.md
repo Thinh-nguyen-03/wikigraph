@@ -29,7 +29,7 @@
 |------|---------|-----------|
 | Initialize Go module | `go mod init github.com/yourname/wikigraph` | Compiles |
 | Set up project structure | See below | Directories exist |
-| Choose and install dependencies | `colly`, `gin`, `modernc.org/sqlite` | `go build` works |
+| Choose and install dependencies | `cobra`, `viper`, `colly`, `gin`, `modernc.org/sqlite` | `go build` works |
 | Create README with project overview | Problem, approach, planned features | Readable by a stranger |
 | Set up basic Makefile or Taskfile | `make run`, `make test`, `make build` | Commands work |
 | Initialize SQLite database | Empty schema, migrations folder | Can connect |
@@ -39,14 +39,15 @@
 ```
 wikigraph/
 ├── cmd/
-│   └── server/
-│       └── main.go
+│   └── wikigraph/
+│       └── main.go      # CLI entry point (Cobra)
 ├── internal/
-│   ├── scraper/
-│   ├── cache/
-│   ├── graph/
-│   ├── embeddings/
-│   └── api/
+│   ├── scraper/         # Wikipedia scraping (Colly)
+│   ├── cache/           # SQLite caching layer
+│   ├── config/          # Configuration (Viper)
+│   ├── graph/           # Graph algorithms
+│   ├── embeddings/      # Embeddings client
+│   └── api/             # HTTP handlers (Gin)
 ├── pkg/
 │   └── wikipedia/
 ├── migrations/
@@ -54,7 +55,7 @@ wikigraph/
 ├── python/              # embedding microservice
 │   ├── main.py
 │   └── requirements.txt
-├── web/                 # frontend (later)
+├── web/                 # frontend (Cytoscape.js)
 ├── go.mod
 ├── Makefile
 └── README.md
@@ -311,11 +312,11 @@ Fully functional API, documented with examples in README.
 
 | Task | Details | Done when |
 |------|---------|-----------|
-| Choose framework | Vis.js for speed, D3 if ambitious | Decision made |
+| Set up Cytoscape.js | Initialize with basic config | Renders empty graph |
 | Set up basic HTML/JS | Connects to API | Loads without errors |
 | Implement graph visualization | Display nodes and edges | Renders a subgraph |
 | Add search box | Enter a title, center graph on it | Works |
-| Add pathfinding UI | Enter two titles, highlight path | Path shown |
+| Add pathfinding UI | Enter two titles, highlight path | Path shown (use Cytoscape's built-in path highlighting) |
 | Style it minimally | Doesn't look broken | Presentable |
 | Serve from Go | Embed static files or serve directory | Single binary serves frontend |
 
@@ -386,7 +387,7 @@ Deployed, documented project ready for portfolio.
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                      Frontend                           │
-│              (Vis.js or D3 graph viz)                   │
+│            (Cytoscape.js graph viz)                     │
 └─────────────────────┬───────────────────────────────────┘
                       │ HTTP
 ┌─────────────────────▼───────────────────────────────────┐
@@ -480,9 +481,9 @@ Copy this section to track your progress:
 - [ ] Error handling
 - [ ] Tests
 
-### Phase 5: Frontend
-- [ ] Framework chosen
-- [ ] Basic setup
+### Phase 5: Frontend (Cytoscape.js)
+- [ ] Cytoscape.js setup
+- [ ] Basic HTML/JS setup
 - [ ] Graph visualization
 - [ ] Search
 - [ ] Pathfinding UI
@@ -521,21 +522,26 @@ Copy this section to track your progress:
 |-----------|------------|-----|
 | Language (main) | Go | Performance, shows systems thinking |
 | Language (ML) | Python | Best ecosystem for embeddings |
+| CLI framework | Cobra | Standard Go CLI library, clean subcommands |
+| Configuration | Viper | Pairs with Cobra, env vars + config files |
+| Logging | slog (stdlib) | Structured logging, zero dependencies |
 | Web scraping | Colly | Built for Go, handles rate limiting |
-| Database | SQLite | Zero setup, portable, sufficient for this scale |
+| Database | SQLite (modernc.org/sqlite) | Zero setup, portable, pure Go driver |
 | API framework | Gin | Fast, minimal, well-documented |
 | Embeddings | sentence-transformers | Free, local, good quality |
 | ML API | FastAPI | Simple, async, auto-docs |
-| Frontend | Vis.js or D3.js | Interactive graph visualization |
+| Frontend | Cytoscape.js | Handles large graphs (10k+ nodes), built-in graph algorithms |
 | Containerization | Docker Compose | Single command to run everything |
 
 ---
 
 ## Resources
 
+- [Cobra documentation](https://cobra.dev/)
+- [Viper documentation](https://github.com/spf13/viper)
 - [Colly documentation](http://go-colly.org/)
 - [Gin documentation](https://gin-gonic.com/docs/)
 - [sentence-transformers](https://www.sbert.net/)
-- [Vis.js Network](https://visjs.github.io/vis-network/docs/network/)
+- [Cytoscape.js documentation](https://js.cytoscape.org/)
 - [Wikipedia API](https://www.mediawiki.org/wiki/API:Main_page)
 - [SQLite in Go (modernc)](https://pkg.go.dev/modernc.org/sqlite)
