@@ -1,5 +1,14 @@
 # Phase 1: Scraper & Cache Implementation
 
+> **Status: COMPLETED**
+>
+> This phase was completed with a slightly different architecture than originally designed:
+> - Separate packages: `internal/fetcher/`, `internal/parser/`, `internal/scraper/`
+> - Uses dependency injection rather than functional options pattern
+> - CLI commands: `fetch` (with --depth, --max-pages, --batch flags) and `stats`
+>
+> See the actual implementation for the current API.
+
 ## Overview
 
 Phase 1 implements the foundation of WikiGraph: fetching Wikipedia pages, parsing their internal links, and caching results in SQLite to avoid redundant requests.
@@ -28,25 +37,29 @@ Phase 1 implements the foundation of WikiGraph: fetching Wikipedia pages, parsin
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         CLI                                 │
-│                   wikigraph fetch <title>                   │
+│               wikigraph fetch <pages...>                    │
+│               wikigraph stats                               │
 └─────────────────────────┬───────────────────────────────────┘
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                      Scraper                                │
-│                                                             │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │    Cache     │───▶│   Fetcher    │───▶│    Parser    │  │
-│  │   (check)    │    │   (HTTP)     │    │   (HTML)     │  │
-│  └──────────────┘    └──────────────┘    └──────────────┘  │
-│          │                                      │           │
-│          │                                      │           │
-│          ▼                                      ▼           │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │                     SQLite                            │  │
-│  │              pages / links tables                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+│                  internal/scraper                           │
+│              (BFS crawl orchestration)                      │
+└───────────┬─────────────────────────────────┬───────────────┘
+            │                                 │
+            ▼                                 ▼
+┌───────────────────────┐           ┌─────────────────────────┐
+│   internal/fetcher    │           │    internal/cache       │
+│   (Colly + rate       │           │    (page/link           │
+│    limiting)          │           │     repository)         │
+└───────────┬───────────┘           └───────────┬─────────────┘
+            │                                   │
+            ▼                                   ▼
+┌───────────────────────┐           ┌─────────────────────────┐
+│   internal/parser     │           │   internal/database     │
+│   (goquery HTML       │           │   (SQLite wrapper)      │
+│    link extraction)   │           └─────────────────────────┘
+└───────────────────────┘
 ```
 
 ### Data Flow

@@ -67,12 +67,12 @@ Empty project that runs, prints "WikiGraph starting" and exits.
 
 ### Checklist
 
-- [ ] Go module initialized
-- [ ] Directory structure created
-- [ ] Dependencies installed
-- [ ] README started
-- [ ] Makefile working
-- [ ] SQLite connection working
+- [x] Go module initialized
+- [x] Directory structure created
+- [x] Dependencies installed
+- [x] README started
+- [x] Makefile working
+- [x] SQLite connection working
 
 ---
 
@@ -123,14 +123,14 @@ CLI command that takes a Wikipedia title, fetches it, stores links, and prints t
 
 ### Checklist
 
-- [ ] Basic HTTP fetcher working
-- [ ] HTML link parser working
-- [ ] SQLite schema created
-- [ ] Page caching implemented
-- [ ] Links stored in database
-- [ ] Rate limiting added
-- [ ] Edge cases handled
-- [ ] Tests written and passing
+- [x] Basic HTTP fetcher working
+- [x] HTML link parser working
+- [x] SQLite schema created
+- [x] Page caching implemented
+- [x] Links stored in database
+- [x] Rate limiting added
+- [x] Edge cases handled
+- [x] Tests written and passing
 
 ---
 
@@ -430,27 +430,26 @@ Copy this section to track your progress:
 ```markdown
 ## Current Status
 
-**Current Phase**: 0 - Setup
-**Week**: 1
-**Last Updated**: YYYY-MM-DD
+**Current Phase**: 2 - Graph Construction
+**Last Updated**: 2025-01-01
 
 ### Phase 0: Setup
-- [ ] Go module initialized
-- [ ] Directory structure created
-- [ ] Dependencies installed
-- [ ] README started
-- [ ] Makefile working
-- [ ] SQLite connection working
+- [x] Go module initialized
+- [x] Directory structure created
+- [x] Dependencies installed
+- [x] README started
+- [x] Makefile working
+- [x] SQLite connection working
 
 ### Phase 1: Scraper + Cache
-- [ ] Basic HTTP fetcher
-- [ ] HTML link parser
-- [ ] SQLite schema
-- [ ] Page caching
-- [ ] Links storage
-- [ ] Rate limiting
-- [ ] Edge case handling
-- [ ] Tests
+- [x] Basic HTTP fetcher
+- [x] HTML link parser
+- [x] SQLite schema
+- [x] Page caching
+- [x] Links storage
+- [x] Rate limiting
+- [x] Edge case handling
+- [x] Tests
 
 ### Phase 2: Graph Construction
 - [ ] BFS crawler

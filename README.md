@@ -7,7 +7,7 @@ A tool that crawls Wikipedia, builds a knowledge graph of connections between pe
 
 ## Status
 
-Under development - Currently in Phase 0 (Setup)
+Under development - Phase 1 (Scraper & Cache) Complete
 
 ## Features
 
@@ -42,7 +42,7 @@ make -f scripts/Makefile build
 
 Or use Go directly:
 ```bash
-go build -o wikigraph ./cmd/server
+go build -o wikigraph.exe ./cmd/wikigraph
 ```
 
 ### Running
@@ -59,38 +59,39 @@ make -f scripts/Makefile run
 
 Or use Go directly:
 ```bash
-go run ./cmd/server
+go run ./cmd/wikigraph
 ```
-
-Currently, the application prints "WikiGraph starting..." and exits. Full functionality will be added in subsequent phases.
 
 ---
 
 ## Usage
 
-### CLI Commands (Planned)
+### CLI Commands
 
 ```bash
-# Fetch a Wikipedia page and display its links
+# Fetch Wikipedia pages and extract links
 wikigraph fetch "Albert Einstein"
-
-# Crawl Wikipedia starting from a page
-wikigraph crawl "Albert Einstein" --depth=2 --max-pages=500
-
-# Find the shortest path between two pages
-wikigraph path "Albert Einstein" "Barack Obama"
-
-# Find semantically similar pages
-wikigraph similar "World War II"
-
-# Start the API server
-wikigraph serve --port=8080
+wikigraph fetch "Physics" "Mathematics" --depth 2
+wikigraph fetch "Computer Science" --depth 3 --max-pages 100
 
 # View cache statistics
-wikigraph cache stats
+wikigraph stats
+```
 
-# Clear the cache
-wikigraph cache clear
+### CLI Commands (Planned - Future Phases)
+
+```bash
+# Crawl Wikipedia starting from a page (Phase 2)
+wikigraph crawl "Albert Einstein" --depth=2 --max-pages=500
+
+# Find the shortest path between two pages (Phase 2)
+wikigraph path "Albert Einstein" "Barack Obama"
+
+# Find semantically similar pages (Phase 3)
+wikigraph similar "World War II"
+
+# Start the API server (Phase 4)
+wikigraph serve --port=8080
 ```
 
 ### API Endpoints (Planned)
@@ -152,23 +153,27 @@ wikigraph cache clear
 wikigraph/
 ├── cmd/
 │   └── wikigraph/
-│       └── main.go           # CLI entry point (Cobra)
+│       ├── main.go           # CLI entry point (Cobra)
+│       ├── root.go           # Root command and global flags
+│       ├── fetch.go          # Fetch command
+│       └── stats.go          # Stats command
 ├── internal/
-│   ├── api/                  # HTTP handlers and routing (Gin)
-│   ├── cache/                # SQLite caching layer
+│   ├── cache/                # Repository layer for pages/links
 │   ├── config/               # Configuration management (Viper)
-│   ├── scraper/              # Wikipedia scraping and parsing (Colly)
-│   ├── graph/                # Graph construction and algorithms
-│   └── embeddings/           # Embeddings client
-├── pkg/
-│   └── wikipedia/            # Wikipedia-specific utilities
-├── python/
-│   ├── main.py               # Embeddings microservice
+│   ├── database/             # SQLite database wrapper
+│   ├── fetcher/              # Wikipedia HTTP fetching (Colly)
+│   ├── parser/               # HTML link extraction (goquery)
+│   ├── scraper/              # BFS crawl orchestration
+│   ├── graph/                # Graph construction and algorithms (Phase 2)
+│   ├── api/                  # HTTP handlers and routing (Phase 4)
+│   └── embeddings/           # Embeddings client (Phase 3)
+├── migrations/
+│   └── 001_initial_schema.sql
+├── python/                   # Embeddings microservice (Phase 3)
+│   ├── main.py
 │   └── requirements.txt
-├── migrations/               # Database migrations
-├── web/                      # Frontend assets
 ├── scripts/                  # Build scripts (Makefile, build.ps1)
-├── wikigraph-project-plan.md # Development roadmap
+├── docs/                     # Documentation
 ├── go.mod
 └── README.md
 ```
@@ -252,7 +257,7 @@ go test -bench=. ./internal/scraper/
 ## Roadmap
 
 - [x] **Phase 0**: Project Setup
-- [ ] **Phase 1**: Scraper & Cache
+- [x] **Phase 1**: Scraper & Cache
 - [ ] **Phase 2**: Graph Construction & Pathfinding
 - [ ] **Phase 3**: Embeddings Microservice
 - [ ] **Phase 4**: REST API
