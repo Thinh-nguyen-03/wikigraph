@@ -7,7 +7,7 @@ A tool that crawls Wikipedia, builds a knowledge graph of connections between pe
 
 ## Status
 
-Under development - Phase 1 (Scraper & Cache) Complete
+Under development - Phase 2 (Graph & Pathfinding) Complete
 
 ## Features
 
@@ -76,17 +76,17 @@ wikigraph fetch "Computer Science" --depth 3 --max-pages 100
 
 # View cache statistics
 wikigraph stats
+
+# Find shortest path between two pages
+wikigraph path "Albert Einstein" "Physics"
+wikigraph path "Cat" "Dog" --max-depth 10
+wikigraph path "Go (programming language)" "Python" --bidirectional
+wikigraph path "A" "B" --format json
 ```
 
 ### CLI Commands (Planned - Future Phases)
 
 ```bash
-# Crawl Wikipedia starting from a page (Phase 2)
-wikigraph crawl "Albert Einstein" --depth=2 --max-pages=500
-
-# Find the shortest path between two pages (Phase 2)
-wikigraph path "Albert Einstein" "Barack Obama"
-
 # Find semantically similar pages (Phase 3)
 wikigraph similar "World War II"
 
@@ -109,40 +109,38 @@ wikigraph serve --port=8080
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      Frontend                           │
-│           (Cytoscape.js graph visualization)            │
-└─────────────────────┬───────────────────────────────────┘
-                      │ HTTP
-┌─────────────────────▼───────────────────────────────────┐
-│                    Go API (Gin)                         │
-│   /page  /path  /connections  /similar  /crawl          │
-└─────────────────────┬───────────────────────────────────┘
-                      │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-┌──────────────┐ ┌─────────┐ ┌─────────────────┐
-│   Scraper    │ │  Graph  │ │   Embeddings    │
-│   (Colly)    │ │ (BFS/   │ │   Go Client     │
-│              │ │  DFS)   │ │                 │
-└──────┬───────┘ └────┬────┘ └────────┬────────┘
-       │              │               │
-       └──────────────┼───────────────┘
-                      ▼
-            ┌──────────────────┐
-            │     SQLite       │
-            │  pages / links / │
-            │   embeddings     │
-            └──────────────────┘
-                      │
-                      ▼
-            ┌──────────────────┐
-            │  Python Service  │
-            │  (FastAPI +      │
-            │  sentence-       │
-            │  transformers)   │
-            └──────────────────┘
+```mermaid
+flowchart TB
+    subgraph CLI[" CLI "]
+        direction LR
+        fetch[fetch]
+        path[path]
+        stats[stats]
+        similar[similar]
+        serve[serve]
+    end
+
+    subgraph Core[" Core "]
+        direction LR
+        Scraper[Scraper]
+        Graph[Graph]
+        Cache[Cache]
+        Embeddings[Embeddings]
+    end
+
+    subgraph Storage[" Storage "]
+        direction LR
+        SQLite[(SQLite)]
+        Python[Python]
+    end
+
+    CLI --> Core
+    Core --> Storage
+    Embeddings -.-> Python
+
+    style CLI fill:#e1f5fe
+    style Core fill:#fff3e0
+    style Storage fill:#e8f5e9
 ```
 
 ---
@@ -156,15 +154,19 @@ wikigraph/
 │       ├── main.go           # CLI entry point (Cobra)
 │       ├── root.go           # Root command and global flags
 │       ├── fetch.go          # Fetch command
+│       ├── path.go           # Path command
 │       └── stats.go          # Stats command
 ├── internal/
 │   ├── cache/                # Repository layer for pages/links
 │   ├── config/               # Configuration management (Viper)
 │   ├── database/             # SQLite database wrapper
 │   ├── fetcher/              # Wikipedia HTTP fetching (Colly)
+│   ├── graph/                # Graph construction and pathfinding
+│   │   ├── graph.go          # Graph data structure
+│   │   ├── loader.go         # Load graph from cache
+│   │   └── pathfinder.go     # BFS and bidirectional search
 │   ├── parser/               # HTML link extraction (goquery)
 │   ├── scraper/              # BFS crawl orchestration
-│   ├── graph/                # Graph construction and algorithms (Phase 2)
 │   ├── api/                  # HTTP handlers and routing (Phase 4)
 │   └── embeddings/           # Embeddings client (Phase 3)
 ├── migrations/
@@ -251,20 +253,6 @@ go test -tags=integration ./...
 # Benchmarks
 go test -bench=. ./internal/scraper/
 ```
-
----
-
-## Roadmap
-
-- [x] **Phase 0**: Project Setup
-- [x] **Phase 1**: Scraper & Cache
-- [ ] **Phase 2**: Graph Construction & Pathfinding
-- [ ] **Phase 3**: Embeddings Microservice
-- [ ] **Phase 4**: REST API
-- [ ] **Phase 5**: Frontend Visualization
-- [ ] **Phase 6**: Polish & Deployment
-
-See [wikigraph-project-plan.md](wikigraph-project-plan.md) for detailed timeline and progress tracking.
 
 ---
 
