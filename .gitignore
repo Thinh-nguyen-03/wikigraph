@@ -1,5 +1,6 @@
 # Binaries
-wikigraph
+/wikigraph
+/server
 *.exe
 
 # Database
@@ -28,3 +29,6 @@ Thumbs.db
 .env.local
 
 .claude/
+
+# Personal learning notes (not for repo)
+GO_LEARNING_GUIDE.md
