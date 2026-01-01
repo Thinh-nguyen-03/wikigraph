@@ -44,7 +44,7 @@ func New(c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Scraper {
 	}
 }
 
-// Crawl starts crawling from the given seed pages.
+// Starts crawling from the given seed pages.
 func (s *Scraper) Crawl(ctx context.Context, seeds []string) (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}
@@ -200,7 +200,7 @@ func (s *Scraper) processPage(ctx context.Context, page *cache.Page, stats *Stat
 	return nil
 }
 
-// FetchSingle fetches a single page without BFS expansion.
+// Fetches a single page without BFS expansion.
 func (s *Scraper) FetchSingle(ctx context.Context, title string) (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}

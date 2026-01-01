@@ -51,9 +51,9 @@ var defaultConfig = Config{
 	},
 }
 
-// Load reads configuration from file and environment variables.
-// Config file locations: ./config.yaml, ~/.config/wikigraph/config.yaml
-// Environment variables are prefixed with WIKIGRAPH_ (e.g., WIKIGRAPH_DATABASE_PATH).
+// Reads configuration from file and environment variables.
+// Locations: ./config.yaml, ~/.config/wikigraph/config.yaml
+// Env vars prefixed with WIKIGRAPH_ (e.g., WIKIGRAPH_DATABASE_PATH).
 func Load() (*Config, error) {
 	v := viper.New()
 

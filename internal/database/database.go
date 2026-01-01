@@ -15,13 +15,13 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// DB wraps a sql.DB connection with WikiGraph-specific functionality.
+// Wraps a sql.DB connection with WikiGraph-specific functionality.
 type DB struct {
 	*sql.DB
 	path string
 }
 
-// Open creates a new database connection with optimal SQLite settings.
+// Creates a new database connection with optimal SQLite settings.
 func Open(path string) (*DB, error) {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
@@ -66,12 +66,11 @@ func Open(path string) (*DB, error) {
 	return &DB{DB: db, path: path}, nil
 }
 
-// Path returns the filesystem path to the database file.
 func (db *DB) Path() string {
 	return db.path
 }
 
-// Migrate runs all pending database migrations.
+// Runs all pending database migrations.
 func (db *DB) Migrate() error {
 	migrations := []struct {
 		version int
@@ -176,7 +175,7 @@ func (db *DB) Stats() (*Stats, error) {
 	return stats, nil
 }
 
-// Checkpoint forces a WAL checkpoint, useful before backups.
+// Forces a WAL checkpoint, useful before backups.
 func (db *DB) Checkpoint() error {
 	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	if err != nil {
@@ -185,7 +184,7 @@ func (db *DB) Checkpoint() error {
 	return nil
 }
 
-// Vacuum reclaims unused space in the database file.
+// Reclaims unused space in the database file.
 func (db *DB) Vacuum() error {
 	_, err := db.Exec("VACUUM")
 	if err != nil {
@@ -194,7 +193,7 @@ func (db *DB) Vacuum() error {
 	return nil
 }
 
-// Analyze updates query planner statistics for better performance.
+// Updates query planner statistics for better performance.
 func (db *DB) Analyze() error {
 	_, err := db.Exec("ANALYZE")
 	if err != nil {

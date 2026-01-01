@@ -51,7 +51,7 @@ func New(cfg Config) *Fetcher {
 	}
 }
 
-// Fetch retrieves a Wikipedia page and extracts its links.
+// Retrieves a Wikipedia page and extracts its links.
 func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 	result := &Result{Title: title}
 

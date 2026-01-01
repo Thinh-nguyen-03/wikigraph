@@ -31,7 +31,7 @@ var excludedPrefixes = []string{
 	"Module:",
 }
 
-// ExtractLinks parses HTML and returns all internal Wikipedia article links.
+// Parses HTML document and returns internal Wikipedia article links.
 func ExtractLinks(doc *goquery.Document) []Link {
 	seen := make(map[string]bool)
 	var links []Link
@@ -58,7 +58,7 @@ func ExtractLinks(doc *goquery.Document) []Link {
 	return links
 }
 
-// ExtractLinksFromHTML parses HTML string and returns all internal Wikipedia article links.
+// Parses HTML string and returns internal Wikipedia article links.
 func ExtractLinksFromHTML(html string) ([]Link, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
