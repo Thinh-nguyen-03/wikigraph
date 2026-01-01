@@ -110,37 +110,10 @@ wikigraph serve --port=8080
 ## Architecture
 
 ```mermaid
-flowchart TB
-    subgraph CLI[" CLI "]
-        direction LR
-        fetch[fetch]
-        path[path]
-        stats[stats]
-        similar[similar]
-        serve[serve]
-    end
-
-    subgraph Core[" Core "]
-        direction LR
-        Scraper[Scraper]
-        Graph[Graph]
-        Cache[Cache]
-        Embeddings[Embeddings]
-    end
-
-    subgraph Storage[" Storage "]
-        direction LR
-        SQLite[(SQLite)]
-        Python[Python]
-    end
-
-    CLI --> Core
-    Core --> Storage
-    Embeddings -.-> Python
-
-    style CLI fill:#e1f5fe
-    style Core fill:#fff3e0
-    style Storage fill:#e8f5e9
+flowchart LR
+    CLI --> Scraper --> Fetcher --> Wikipedia
+    Scraper --> Cache --> SQLite[(SQLite)]
+    Cache --> Graph
 ```
 
 ---
