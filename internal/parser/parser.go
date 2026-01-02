@@ -2,6 +2,8 @@
 package parser
 
 import (
+	"bytes"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -13,22 +15,22 @@ type Link struct {
 	AnchorText string
 }
 
-var excludedPrefixes = []string{
-	"Wikipedia:",
-	"Help:",
-	"File:",
-	"Category:",
-	"Template:",
-	"Template_talk:",
-	"Portal:",
-	"Special:",
-	"Talk:",
-	"User:",
-	"User_talk:",
-	"Wikipedia_talk:",
-	"MediaWiki:",
-	"Draft:",
-	"Module:",
+var excludedNamespaces = map[string]bool{
+	"Wikipedia":      true,
+	"Help":           true,
+	"File":           true,
+	"Category":       true,
+	"Template":       true,
+	"Template talk":  true,
+	"Portal":         true,
+	"Special":        true,
+	"Talk":           true,
+	"User":           true,
+	"User talk":      true,
+	"Wikipedia talk": true,
+	"MediaWiki":      true,
+	"Draft":          true,
+	"Module":         true,
 }
 
 // Parses HTML document and returns internal Wikipedia article links.
@@ -62,7 +64,16 @@ func ExtractLinks(doc *goquery.Document) []Link {
 func ExtractLinksFromHTML(html string) ([]Link, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parsing HTML document: %w", err)
+	}
+	return ExtractLinks(doc), nil
+}
+
+// Parses HTML bytes and extracts internal Wikipedia article links.
+func ExtractLinksFromBytes(html []byte) ([]Link, error) {
+	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
+	if err != nil {
+		return nil, fmt.Errorf("parsing HTML document: %w", err)
 	}
 	return ExtractLinks(doc), nil
 }
@@ -89,8 +100,9 @@ func extractTitle(href string) string {
 }
 
 func shouldExclude(title string) bool {
-	for _, prefix := range excludedPrefixes {
-		if strings.HasPrefix(title, prefix) {
+	if idx := strings.Index(title, ":"); idx != -1 {
+		namespace := title[:idx]
+		if excludedNamespaces[namespace] {
 			return true
 		}
 	}
