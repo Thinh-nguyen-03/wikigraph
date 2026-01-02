@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
@@ -19,10 +20,11 @@ type Scraper struct {
 }
 
 type Config struct {
-	MaxDepth      int
-	BatchSize     int
-	MaxPages      int
-	StopOnError   bool
+	MaxDepth    int
+	BatchSize   int
+	MaxPages    int
+	StopOnError bool
+	Workers     int // Number of concurrent fetch workers
 }
 
 type Stats struct {
@@ -36,6 +38,9 @@ type Stats struct {
 func New(c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Scraper {
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 10
+	}
+	if cfg.Workers <= 0 {
+		cfg.Workers = 5
 	}
 	return &Scraper{
 		cache:   c,
@@ -69,7 +74,7 @@ func (s *Scraper) Crawl(ctx context.Context, seeds []string) (*Stats, error) {
 		if err != nil {
 			stats.Duration = time.Since(start)
 			if s.cfg.StopOnError {
-				return stats, err
+				return stats, fmt.Errorf("crawl at depth %d: %w", depth, err)
 			}
 			slog.Warn("error during crawl", "error", err)
 		}
@@ -96,6 +101,15 @@ func (s *Scraper) Crawl(ctx context.Context, seeds []string) (*Stats, error) {
 	return stats, nil
 }
 
+type pageResult struct {
+	page    *cache.Page
+	targets []string
+	fetched bool
+	skipped bool
+	links   int
+	err     error
+}
+
 func (s *Scraper) processDepth(ctx context.Context, stats *Stats) (int, error) {
 	limit := s.cfg.BatchSize
 	if s.cfg.MaxPages > 0 {
@@ -117,54 +131,128 @@ func (s *Scraper) processDepth(ctx context.Context, stats *Stats) (int, error) {
 		return 0, nil
 	}
 
-	for _, page := range pages {
-		select {
-		case <-ctx.Done():
-			return 0, ctx.Err()
-		default:
+	numWorkers := s.cfg.Workers
+	if numWorkers > len(pages) {
+		numWorkers = len(pages)
+	}
+
+	jobs := make(chan *cache.Page, len(pages))
+	results := make(chan pageResult, len(pages))
+
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for page := range jobs {
+				select {
+				case <-ctx.Done():
+					results <- pageResult{page: page, err: ctx.Err()}
+					return
+				default:
+				}
+				targets, fetched, skipped, links, err := s.processPageWorker(ctx, page)
+				results <- pageResult{
+					page:    page,
+					targets: targets,
+					fetched: fetched,
+					skipped: skipped,
+					links:   links,
+					err:     err,
+				}
+			}
+		}()
+	}
+
+	go func() {
+		for _, page := range pages {
+			jobs <- page
+		}
+		close(jobs)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	allTargets := make(map[string]struct{})
+	var firstError error
+
+	for result := range results {
+		if result.err != nil {
+			stats.Errors++
+			if s.cfg.StopOnError && firstError == nil {
+				firstError = result.err
+			}
+			slog.Warn("failed to process page", "title", result.page.Title, "error", result.err)
+			continue
 		}
 
-		if err := s.processPage(ctx, page, stats); err != nil {
-			stats.Errors++
-			if s.cfg.StopOnError {
-				return 0, err
-			}
-			slog.Warn("failed to process page", "title", page.Title, "error", err)
+		if result.fetched {
+			stats.PagesFetched++
+			stats.LinksFound += result.links
+		}
+		if result.skipped {
+			stats.PagesSkipped++
+		}
+
+		for _, t := range result.targets {
+			allTargets[t] = struct{}{}
+		}
+	}
+
+	if firstError != nil && s.cfg.StopOnError {
+		return len(pages), firstError
+	}
+
+	if len(allTargets) > 0 {
+		targetSlice := make([]string, 0, len(allTargets))
+		for t := range allTargets {
+			targetSlice = append(targetSlice, t)
+		}
+		if err := s.cache.EnsureTargetPagesExist(targetSlice); err != nil {
+			return len(pages), fmt.Errorf("creating target pages: %w", err)
 		}
 	}
 
 	return len(pages), nil
 }
 
-func (s *Scraper) processPage(ctx context.Context, page *cache.Page, stats *Stats) error {
+// processPageWorker processes a single page and returns individual stats instead of updating shared Stats.
+func (s *Scraper) processPageWorker(ctx context.Context, page *cache.Page) (targets []string, fetched, skipped bool, links int, err error) {
 	slog.Debug("fetching page", "title", page.Title)
 
 	result := s.fetcher.Fetch(ctx, page.Title)
 
 	if result.Error != nil {
-		if err := s.cache.UpdatePageStatus(page.Title, cache.StatusError, "", ""); err != nil {
-			return fmt.Errorf("updating error status: %w", err)
+		if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusError, "", ""); updateErr != nil {
+			return nil, false, false, 0, fmt.Errorf("updating error status: %w", updateErr)
 		}
-		return result.Error
+		return nil, false, false, 0, result.Error
 	}
 
 	if result.StatusCode == 404 {
-		if err := s.cache.UpdatePageStatus(page.Title, cache.StatusNotFound, "", ""); err != nil {
-			return fmt.Errorf("updating not_found status: %w", err)
+		if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusNotFound, "", ""); updateErr != nil {
+			return nil, false, false, 0, fmt.Errorf("updating not_found status: %w", updateErr)
 		}
-		stats.PagesSkipped++
-		return nil
+		return nil, false, true, 0, nil
 	}
 
 	if result.RedirectTo != "" {
-		if err := s.cache.UpdatePageStatus(page.Title, cache.StatusRedirect, "", result.RedirectTo); err != nil {
-			return fmt.Errorf("updating redirect status: %w", err)
+		if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusRedirect, "", result.RedirectTo); updateErr != nil {
+			return nil, false, false, 0, fmt.Errorf("updating redirect status: %w", updateErr)
 		}
-		if _, err := s.cache.GetOrCreatePage(result.RedirectTo); err != nil {
-			return fmt.Errorf("creating redirect target: %w", err)
+		return []string{result.RedirectTo}, false, true, 0, nil
+	}
+
+	contentUnchanged := page.ContentHash.Valid && page.ContentHash.String == result.ContentHash
+	if contentUnchanged {
+		slog.Debug("content unchanged, skipping link update", "title", page.Title)
+		if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusSuccess, result.ContentHash, ""); updateErr != nil {
+			return nil, false, false, 0, fmt.Errorf("updating success status: %w", updateErr)
 		}
-		stats.PagesSkipped++
-		return nil
+		return nil, false, true, 0, nil
 	}
 
 	cacheLinks := make([]cache.Link, len(result.Links))
@@ -177,27 +265,20 @@ func (s *Scraper) processPage(ctx context.Context, page *cache.Page, stats *Stat
 		targetTitles[i] = link.Title
 	}
 
-	if err := s.cache.DeleteLinksFromPage(page.ID); err != nil {
-		return fmt.Errorf("clearing old links: %w", err)
+	if deleteErr := s.cache.DeleteLinksFromPage(page.ID); deleteErr != nil {
+		return nil, false, false, 0, fmt.Errorf("clearing old links: %w", deleteErr)
 	}
-	if err := s.cache.AddLinks(page.ID, cacheLinks); err != nil {
-		return fmt.Errorf("adding links: %w", err)
-	}
-
-	if err := s.cache.EnsureTargetPagesExist(targetTitles); err != nil {
-		return fmt.Errorf("creating target pages: %w", err)
+	if addErr := s.cache.AddLinks(page.ID, cacheLinks); addErr != nil {
+		return nil, false, false, 0, fmt.Errorf("adding links: %w", addErr)
 	}
 
-	if err := s.cache.UpdatePageStatus(page.Title, cache.StatusSuccess, result.ContentHash, ""); err != nil {
-		return fmt.Errorf("updating success status: %w", err)
+	if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusSuccess, result.ContentHash, ""); updateErr != nil {
+		return nil, false, false, 0, fmt.Errorf("updating success status: %w", updateErr)
 	}
-
-	stats.PagesFetched++
-	stats.LinksFound += len(result.Links)
 
 	slog.Debug("processed page", "title", page.Title, "links", len(result.Links))
 
-	return nil
+	return targetTitles, true, false, len(result.Links), nil
 }
 
 // Fetches a single page without BFS expansion.
@@ -217,10 +298,26 @@ func (s *Scraper) FetchSingle(ctx context.Context, title string) (*Stats, error)
 		return stats, nil
 	}
 
-	if err := s.processPage(ctx, page, stats); err != nil {
+	targets, fetched, skipped, links, err := s.processPageWorker(ctx, page)
+	if err != nil {
 		stats.Errors = 1
 		stats.Duration = time.Since(start)
-		return stats, err
+		return stats, fmt.Errorf("fetching page %q: %w", title, err)
+	}
+
+	if fetched {
+		stats.PagesFetched = 1
+		stats.LinksFound = links
+	}
+	if skipped {
+		stats.PagesSkipped = 1
+	}
+
+	// For single fetch, insert targets immediately
+	if len(targets) > 0 {
+		if err := s.cache.EnsureTargetPagesExist(targets); err != nil {
+			return stats, fmt.Errorf("creating target pages: %w", err)
+		}
 	}
 
 	stats.Duration = time.Since(start)
