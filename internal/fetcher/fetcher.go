@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gocolly/colly/v2"
@@ -16,9 +17,17 @@ import (
 	"github.com/Thinh-nguyen-03/wikigraph/internal/parser"
 )
 
+type pendingRequest struct {
+	result   *Result
+	html     []byte
+	finalURL string
+	done     chan struct{}
+}
+
 type Fetcher struct {
 	collector *colly.Collector
 	limiter   *rate.Limiter
+	pending   sync.Map // map[string]*pendingRequest
 }
 
 type Result struct {
@@ -38,17 +47,42 @@ type Config struct {
 }
 
 func New(cfg Config) *Fetcher {
+	f := &Fetcher{
+		limiter: rate.NewLimiter(rate.Limit(cfg.RateLimit), 3),
+	}
+
 	c := colly.NewCollector(
 		colly.UserAgent(cfg.UserAgent),
 		colly.AllowedDomains("en.wikipedia.org"),
+		colly.Async(true),
 	)
 
 	c.SetRequestTimeout(cfg.RequestTimeout)
 
-	return &Fetcher{
-		collector: c,
-		limiter:   rate.NewLimiter(rate.Limit(cfg.RateLimit), 1),
-	}
+	c.OnResponse(func(r *colly.Response) {
+		urlStr := r.Request.URL.String()
+		if val, ok := f.pending.Load(urlStr); ok {
+			req := val.(*pendingRequest)
+			req.result.StatusCode = r.StatusCode
+			req.finalURL = r.Request.URL.String()
+			req.html = make([]byte, len(r.Body))
+			copy(req.html, r.Body)
+			close(req.done)
+		}
+	})
+
+	c.OnError(func(r *colly.Response, err error) {
+		urlStr := r.Request.URL.String()
+		if val, ok := f.pending.Load(urlStr); ok {
+			req := val.(*pendingRequest)
+			req.result.StatusCode = r.StatusCode
+			req.result.Error = err
+			close(req.done)
+		}
+	})
+
+	f.collector = c
+	return f
 }
 
 // Retrieves a Wikipedia page and extracts its links.
@@ -62,28 +96,27 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 
 	pageURL := f.buildURL(title)
 
-	c := f.collector.Clone()
+	req := &pendingRequest{
+		result: result,
+		done:   make(chan struct{}),
+	}
 
-	var html string
-	var finalURL string
+	f.pending.Store(pageURL, req)
+	defer f.pending.Delete(pageURL)
 
-	c.OnResponse(func(r *colly.Response) {
-		result.StatusCode = r.StatusCode
-		finalURL = r.Request.URL.String()
-		html = string(r.Body)
-	})
-
-	c.OnError(func(r *colly.Response, err error) {
-		result.StatusCode = r.StatusCode
-		result.Error = err
-	})
-
-	if err := c.Visit(pageURL); err != nil {
+	if err := f.collector.Visit(pageURL); err != nil {
 		result.Error = err
 		return result
 	}
 
-	c.Wait()
+	// Wait for response or context cancellation
+	select {
+	case <-req.done:
+		// Request completed
+	case <-ctx.Done():
+		result.Error = ctx.Err()
+		return result
+	}
 
 	if result.Error != nil {
 		return result
@@ -93,20 +126,20 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 		return result
 	}
 
-	redirectTo := detectRedirect(pageURL, finalURL)
+	redirectTo := detectRedirect(pageURL, req.finalURL)
 	if redirectTo != "" {
 		result.RedirectTo = redirectTo
 		return result
 	}
 
-	links, err := parser.ExtractLinksFromHTML(html)
+	links, err := parser.ExtractLinksFromBytes(req.html)
 	if err != nil {
 		result.Error = fmt.Errorf("parsing html: %w", err)
 		return result
 	}
 
 	result.Links = links
-	result.ContentHash = hashContent(html)
+	result.ContentHash = hashContentBytes(req.html)
 
 	return result
 }
@@ -142,5 +175,10 @@ func detectRedirect(originalURL, finalURL string) string {
 
 func hashContent(content string) string {
 	hash := md5.Sum([]byte(content))
+	return hex.EncodeToString(hash[:])
+}
+
+func hashContentBytes(content []byte) string {
+	hash := md5.Sum(content)
 	return hex.EncodeToString(hash[:])
 }
