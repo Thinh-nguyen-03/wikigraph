@@ -8,12 +8,57 @@ type PathResult struct {
 	Explored int
 }
 
+// nodeQueue implements a simple queue using head/tail indices to avoid
+// repeated memory allocations during BFS traversal.
+type nodeQueue struct {
+	items []*Node
+	head  int
+	tail  int
+}
+
+func newNodeQueue(capacity int) *nodeQueue {
+	return &nodeQueue{
+		items: make([]*Node, capacity),
+	}
+}
+
+func (q *nodeQueue) push(n *Node) {
+	if q.tail >= len(q.items) {
+		newItems := make([]*Node, len(q.items)*2)
+		copy(newItems, q.items[q.head:q.tail])
+		q.items = newItems
+		q.tail -= q.head
+		q.head = 0
+	}
+	q.items[q.tail] = n
+	q.tail++
+}
+
+func (q *nodeQueue) pop() *Node {
+	if q.head >= q.tail {
+		return nil
+	}
+	n := q.items[q.head]
+	q.items[q.head] = nil
+	q.head++
+	return n
+}
+
+func (q *nodeQueue) len() int {
+	return q.tail - q.head
+}
+
+func (q *nodeQueue) reset() {
+	q.head = 0
+	q.tail = 0
+}
+
 // Finds the shortest path using BFS.
 func (g *Graph) FindPath(from, to string) PathResult {
 	return g.FindPathWithLimit(from, to, -1)
 }
 
-// Finds shortest path with a maximum depth. Use -1 for unlimited.
+// FindPathWithLimit finds the shortest path with a maximum depth. Use -1 for unlimited.
 func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -31,19 +76,26 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 
 	visited := make(map[*Node]bool)
 	parent := make(map[*Node]*Node)
-	queue := []*Node{fromNode}
+
+	queue := newNodeQueue(64)
+	queue.push(fromNode)
 	visited[fromNode] = true
 	explored := 0
 	depth := 0
 
-	for len(queue) > 0 {
+	currentLevelCount := 1
+	nextLevelCount := 0
+
+	for queue.len() > 0 {
 		if maxDepth >= 0 && depth >= maxDepth {
 			break
 		}
 
-		levelSize := len(queue)
-		for i := 0; i < levelSize; i++ {
-			current := queue[i]
+		for i := 0; i < currentLevelCount; i++ {
+			current := queue.pop()
+			if current == nil {
+				break
+			}
 			explored++
 
 			for _, neighbor := range current.OutLinks {
@@ -62,10 +114,12 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 				}
 
 				visited[neighbor] = true
-				queue = append(queue, neighbor)
+				queue.push(neighbor)
+				nextLevelCount++
 			}
 		}
-		queue = queue[levelSize:]
+		currentLevelCount = nextLevelCount
+		nextLevelCount = 0
 		depth++
 	}
 
@@ -203,18 +257,17 @@ func buildBidiPath(parentF, parentB map[*Node]*Node, from, to, meeting *Node, ex
 }
 
 func reconstructPath(parent map[*Node]*Node, from, to *Node) []string {
-	var path []*Node
+	length := 0
 	for n := to; n != nil; n = parent[n] {
-		path = append(path, n)
-	}
-	// Reverse
-	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
-		path[i], path[j] = path[j], path[i]
+		length++
 	}
 
-	result := make([]string, len(path))
-	for i, n := range path {
+	result := make([]string, length)
+	i := length - 1
+	for n := to; n != nil; n = parent[n] {
 		result[i] = n.Title
+		i--
 	}
+
 	return result
 }
