@@ -1,6 +1,10 @@
 package graph
 
-import "github.com/Thinh-nguyen-03/wikigraph/internal/cache"
+import (
+	"fmt"
+
+	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
+)
 
 // Loads a graph from the cache.
 type Loader struct {
@@ -15,19 +19,18 @@ func NewLoader(c *cache.Cache) *Loader {
 func (l *Loader) Load() (*Graph, error) {
 	data, err := l.cache.GetGraphData()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("loading graph data: %w", err)
 	}
 
-	g := NewWithCapacity(len(data.Nodes))
+	estimatedNodes := len(data.Edges)/5 + len(data.Nodes)
+	g := NewWithCapacity(estimatedNodes)
 
-	// Add all nodes first (ensures pages with no outlinks are included)
-	for _, title := range data.Nodes {
-		g.AddNode(title)
-	}
-
-	// Add all edges
 	for _, edge := range data.Edges {
 		g.AddEdge(edge[0], edge[1])
+	}
+
+	for _, title := range data.Nodes {
+		g.AddNode(title)
 	}
 
 	return g, nil

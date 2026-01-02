@@ -50,6 +50,12 @@ func (g *Graph) AddEdge(source, target string) {
 	src := g.addNode(source)
 	tgt := g.addNode(target)
 
+	for _, existing := range src.OutLinks {
+		if existing == tgt {
+			return // Edge already exists, skip
+		}
+	}
+
 	src.OutLinks = append(src.OutLinks, tgt)
 	tgt.InLinks = append(tgt.InLinks, src)
 	g.edges++
