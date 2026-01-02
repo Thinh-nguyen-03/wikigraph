@@ -1,5 +1,15 @@
 # Phase 2: Graph Construction & Pathfinding
 
+> **Status: COMPLETED**
+>
+> This phase has been fully implemented with:
+> - In-memory graph loaded from SQLite cache
+> - BFS pathfinding with depth limits
+> - Bidirectional search for faster pathfinding on large graphs
+> - CLI command: `wikigraph path <from> <to>` with `--bidirectional`, `--max-depth`, `--format` flags
+>
+> See `internal/graph/` for implementation details.
+
 ## Overview
 
 Phase 2 builds on the scraper/cache foundation to construct an in-memory graph and implement pathfinding algorithms. Users will be able to find the shortest path between any two Wikipedia articles that have been crawled.
@@ -598,14 +608,14 @@ No new external dependencies required.
 
 ## Checklist
 
-- [ ] Graph data structure implemented
-- [ ] Graph loader from cache
-- [ ] BFS pathfinding working
-- [ ] Path CLI command
-- [ ] Bidirectional search (stretch goal)
-- [ ] Unit tests passing
-- [ ] Benchmarks written
-- [ ] Documentation updated
+- [x] Graph data structure implemented
+- [x] Graph loader from cache
+- [x] BFS pathfinding working
+- [x] Path CLI command
+- [x] Bidirectional search (stretch goal)
+- [x] Unit tests passing
+- [x] Benchmarks written
+- [x] Documentation updated
 
 ---
 

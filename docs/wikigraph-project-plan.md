@@ -176,12 +176,12 @@ CLI that crawls from a starting page and finds paths.
 
 ### Checklist
 
-- [ ] BFS crawler implemented
-- [ ] Crawl controls (depth, max pages, timeout)
-- [ ] In-memory graph loading
-- [ ] BFS pathfinding working
-- [ ] Bidirectional search (stretch goal)
-- [ ] Tests written and passing
+- [x] BFS crawler implemented
+- [x] Crawl controls (depth, max pages, timeout)
+- [x] In-memory graph loading
+- [x] BFS pathfinding working
+- [x] Bidirectional search (stretch goal)
+- [x] Tests written and passing
 
 ---
 
@@ -430,8 +430,8 @@ Copy this section to track your progress:
 ```markdown
 ## Current Status
 
-**Current Phase**: 2 - Graph Construction
-**Last Updated**: 2025-01-01
+**Current Phase**: 3 - Embeddings Microservice
+**Last Updated**: 2026-01-01
 
 ### Phase 0: Setup
 - [x] Go module initialized
@@ -452,12 +452,12 @@ Copy this section to track your progress:
 - [x] Tests
 
 ### Phase 2: Graph Construction
-- [ ] BFS crawler
-- [ ] Crawl controls
-- [ ] In-memory graph
-- [ ] BFS pathfinding
-- [ ] Bidirectional search
-- [ ] Tests
+- [x] BFS crawler
+- [x] Crawl controls
+- [x] In-memory graph
+- [x] BFS pathfinding
+- [x] Bidirectional search
+- [x] Tests
 
 ### Phase 3: Embeddings
 - [ ] Python service

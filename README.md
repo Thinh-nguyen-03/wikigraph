@@ -7,7 +7,7 @@ A tool that crawls Wikipedia, builds a knowledge graph of connections between pe
 
 ## Status
 
-Under development - Phase 2 (Graph & Pathfinding) Complete
+**Phase 2 Complete** - Graph & Pathfinding implemented. Now starting Phase 3 (Embeddings).
 
 ## Features
 
@@ -84,10 +84,10 @@ wikigraph path "Go (programming language)" "Python" --bidirectional
 wikigraph path "A" "B" --format json
 ```
 
-### CLI Commands (Planned - Future Phases)
+### CLI Commands (Coming Soon)
 
 ```bash
-# Find semantically similar pages (Phase 3)
+# Find semantically similar pages (Phase 3 - In Progress)
 wikigraph similar "World War II"
 
 # Start the API server (Phase 4)
