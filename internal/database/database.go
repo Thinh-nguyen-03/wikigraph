@@ -78,6 +78,7 @@ func (db *DB) Migrate() error {
 		name    string
 	}{
 		{1, "migrations/001_initial_schema.sql", "initial_schema"},
+		{2, "migrations/002_optimization_indexes.sql", "optimization_indexes"},
 	}
 
 	var currentVersion int
@@ -139,32 +140,37 @@ type Stats struct {
 func (db *DB) Stats() (*Stats, error) {
 	stats := &Stats{}
 
-	query := `
+	pageQuery := `
 		SELECT
-			(SELECT COUNT(*) FROM pages) as total_pages,
-			(SELECT COUNT(*) FROM pages WHERE fetch_status = 'success') as fetched_pages,
-			(SELECT COUNT(*) FROM pages WHERE fetch_status = 'pending') as pending_pages,
-			(SELECT COUNT(*) FROM pages WHERE fetch_status = 'redirect') as redirect_pages,
-			(SELECT COUNT(*) FROM pages WHERE fetch_status = 'error') as error_pages,
-			(SELECT COUNT(*) FROM pages WHERE fetch_status = 'not_found') as not_found_pages,
-			(SELECT COUNT(*) FROM links) as total_links,
-			(SELECT MIN(fetched_at) FROM pages WHERE fetched_at IS NOT NULL) as oldest_fetch,
-			(SELECT MAX(fetched_at) FROM pages WHERE fetched_at IS NOT NULL) as newest_fetch
+			COUNT(*) as total_pages,
+			COUNT(CASE WHEN fetch_status = 'success' THEN 1 END) as fetched_pages,
+			COUNT(CASE WHEN fetch_status = 'pending' THEN 1 END) as pending_pages,
+			COUNT(CASE WHEN fetch_status = 'redirect' THEN 1 END) as redirect_pages,
+			COUNT(CASE WHEN fetch_status = 'error' THEN 1 END) as error_pages,
+			COUNT(CASE WHEN fetch_status = 'not_found' THEN 1 END) as not_found_pages,
+			MIN(fetched_at) as oldest_fetch,
+			MAX(fetched_at) as newest_fetch
+		FROM pages
 	`
 
-	err := db.QueryRow(query).Scan(
+	err := db.QueryRow(pageQuery).Scan(
 		&stats.TotalPages,
 		&stats.FetchedPages,
 		&stats.PendingPages,
 		&stats.RedirectPages,
 		&stats.ErrorPages,
 		&stats.NotFoundPages,
-		&stats.TotalLinks,
 		&stats.OldestFetch,
 		&stats.NewestFetch,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("querying stats: %w", err)
+		return nil, fmt.Errorf("querying page stats: %w", err)
+	}
+
+	// Links count requires separate query (different table)
+	err = db.QueryRow(`SELECT COUNT(*) FROM links`).Scan(&stats.TotalLinks)
+	if err != nil {
+		return nil, fmt.Errorf("querying link count: %w", err)
 	}
 
 	stats.DatabaseSizeBytes, err = db.Size()
