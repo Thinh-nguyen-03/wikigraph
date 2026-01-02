@@ -46,13 +46,25 @@ type Link struct {
 	CreatedAt   string
 }
 
+const pageColumns = "id, title, content_hash, fetch_status, redirect_to, fetched_at, created_at, updated_at"
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPage(s scanner) (*Page, error) {
+	p := &Page{}
+	err := s.Scan(&p.ID, &p.Title, &p.ContentHash, &p.FetchStatus, &p.RedirectTo, &p.FetchedAt, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
 // Returns nil if page not found.
 func (c *Cache) GetPage(title string) (*Page, error) {
-	p := &Page{}
-	err := c.db.QueryRow(`
-		SELECT id, title, content_hash, fetch_status, redirect_to, fetched_at, created_at, updated_at
-		FROM pages WHERE title = ?
-	`, title).Scan(&p.ID, &p.Title, &p.ContentHash, &p.FetchStatus, &p.RedirectTo, &p.FetchedAt, &p.CreatedAt, &p.UpdatedAt)
+	row := c.db.QueryRow(`SELECT `+pageColumns+` FROM pages WHERE title = ?`, title)
+	p, err := scanPage(row)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -80,7 +92,7 @@ func (c *Cache) CreatePage(title string) (*Page, error) {
 func (c *Cache) GetOrCreatePage(title string) (*Page, error) {
 	page, err := c.GetPage(title)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checking existing page: %w", err)
 	}
 	if page != nil {
 		return page, nil
@@ -115,7 +127,7 @@ func (c *Cache) UpdatePageStatus(title string, status FetchStatus, contentHash, 
 // Returns pages that need to be fetched, up to limit.
 func (c *Cache) GetPendingPages(limit int) ([]*Page, error) {
 	rows, err := c.db.Query(`
-		SELECT id, title, content_hash, fetch_status, redirect_to, fetched_at, created_at, updated_at
+		SELECT `+pageColumns+`
 		FROM pages WHERE fetch_status = 'pending'
 		ORDER BY created_at ASC
 		LIMIT ?
@@ -133,7 +145,7 @@ func (c *Cache) GetStalePages(olderThan time.Duration, limit int) ([]*Page, erro
 	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
 
 	rows, err := c.db.Query(`
-		SELECT id, title, content_hash, fetch_status, redirect_to, fetched_at, created_at, updated_at
+		SELECT `+pageColumns+`
 		FROM pages
 		WHERE fetch_status = 'success' AND fetched_at < ?
 		ORDER BY fetched_at ASC
@@ -261,11 +273,8 @@ func (c *Cache) EnsureTargetPagesExist(titles []string) error {
 }
 
 func (c *Cache) getPageByID(id int64) (*Page, error) {
-	p := &Page{}
-	err := c.db.QueryRow(`
-		SELECT id, title, content_hash, fetch_status, redirect_to, fetched_at, created_at, updated_at
-		FROM pages WHERE id = ?
-	`, id).Scan(&p.ID, &p.Title, &p.ContentHash, &p.FetchStatus, &p.RedirectTo, &p.FetchedAt, &p.CreatedAt, &p.UpdatedAt)
+	row := c.db.QueryRow(`SELECT `+pageColumns+` FROM pages WHERE id = ?`, id)
+	p, err := scanPage(row)
 	if err != nil {
 		return nil, fmt.Errorf("querying page by id: %w", err)
 	}
@@ -275,8 +284,8 @@ func (c *Cache) getPageByID(id int64) (*Page, error) {
 func scanPages(rows *sql.Rows) ([]*Page, error) {
 	var pages []*Page
 	for rows.Next() {
-		p := &Page{}
-		if err := rows.Scan(&p.ID, &p.Title, &p.ContentHash, &p.FetchStatus, &p.RedirectTo, &p.FetchedAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		p, err := scanPage(rows)
+		if err != nil {
 			return nil, fmt.Errorf("scanning page: %w", err)
 		}
 		pages = append(pages, p)
@@ -286,34 +295,27 @@ func scanPages(rows *sql.Rows) ([]*Page, error) {
 
 // Holds bulk data for graph construction.
 type GraphData struct {
-	Nodes []string     // Titles of successfully fetched pages
+	Nodes []string     // Titles of successfully fetched pages (for isolated nodes)
 	Edges [][2]string  // [source, target] pairs
 }
 
-// Returns all data needed to construct the link graph in 2 queries.
+// Returns all data needed to construct the link graph.
 func (c *Cache) GetGraphData() (*GraphData, error) {
-	data := &GraphData{}
-
-	// Query 1: Get all successful page titles
-	rows, err := c.db.Query(`SELECT title FROM pages WHERE fetch_status = 'success'`)
+	var edgeCount int
+	err := c.db.QueryRow(`
+		SELECT COUNT(*) FROM links l
+		JOIN pages p ON p.id = l.source_id
+		WHERE p.fetch_status = 'success'
+	`).Scan(&edgeCount)
 	if err != nil {
-		return nil, fmt.Errorf("querying pages: %w", err)
-	}
-	for rows.Next() {
-		var title string
-		if err := rows.Scan(&title); err != nil {
-			rows.Close()
-			return nil, fmt.Errorf("scanning title: %w", err)
-		}
-		data.Nodes = append(data.Nodes, title)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterating pages: %w", err)
+		return nil, fmt.Errorf("counting edges: %w", err)
 	}
 
-	// Query 2: Get all edges from successful pages
-	rows, err = c.db.Query(`
+	data := &GraphData{
+		Edges: make([][2]string, 0, edgeCount),
+	}
+
+	rows, err := c.db.Query(`
 		SELECT p.title, l.target_title
 		FROM links l
 		JOIN pages p ON p.id = l.source_id
@@ -322,17 +324,38 @@ func (c *Cache) GetGraphData() (*GraphData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying edges: %w", err)
 	}
+	defer rows.Close()
+
 	for rows.Next() {
 		var source, target string
 		if err := rows.Scan(&source, &target); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("scanning edge: %w", err)
 		}
 		data.Edges = append(data.Edges, [2]string{source, target})
 	}
-	rows.Close()
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating edges: %w", err)
+	}
+
+	rows, err = c.db.Query(`
+		SELECT p.title FROM pages p
+		WHERE p.fetch_status = 'success'
+		AND NOT EXISTS (SELECT 1 FROM links l WHERE l.source_id = p.id)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("querying isolated nodes: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var title string
+		if err := rows.Scan(&title); err != nil {
+			return nil, fmt.Errorf("scanning isolated node: %w", err)
+		}
+		data.Nodes = append(data.Nodes, title)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating isolated nodes: %w", err)
 	}
 
 	return data, nil
