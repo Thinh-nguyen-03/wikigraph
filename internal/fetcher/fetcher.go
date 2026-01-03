@@ -27,7 +27,7 @@ type pendingRequest struct {
 type Fetcher struct {
 	collector *colly.Collector
 	limiter   *rate.Limiter
-	pending   sync.Map // map[string]*pendingRequest
+	pending   sync.Map
 }
 
 type Result struct {
@@ -47,8 +47,14 @@ type Config struct {
 }
 
 func New(cfg Config) *Fetcher {
+	// Burst size accommodates concurrent workers for parallel requests
+	burstSize := 50
+	if cfg.RateLimit < 50 {
+		burstSize = int(cfg.RateLimit)
+	}
+
 	f := &Fetcher{
-		limiter: rate.NewLimiter(rate.Limit(cfg.RateLimit), 3),
+		limiter: rate.NewLimiter(rate.Limit(cfg.RateLimit), burstSize),
 	}
 
 	c := colly.NewCollector(
@@ -85,7 +91,6 @@ func New(cfg Config) *Fetcher {
 	return f
 }
 
-// Retrieves a Wikipedia page and extracts its links.
 func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 	result := &Result{Title: title}
 
@@ -109,10 +114,8 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 		return result
 	}
 
-	// Wait for response or context cancellation
 	select {
 	case <-req.done:
-		// Request completed
 	case <-ctx.Done():
 		result.Error = ctx.Err()
 		return result
