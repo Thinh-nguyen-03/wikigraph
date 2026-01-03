@@ -24,7 +24,7 @@ type Config struct {
 	BatchSize   int
 	MaxPages    int
 	StopOnError bool
-	Workers     int // Number of concurrent fetch workers
+	Workers     int
 }
 
 type Stats struct {
@@ -40,7 +40,7 @@ func New(c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Scraper {
 		cfg.BatchSize = 10
 	}
 	if cfg.Workers <= 0 {
-		cfg.Workers = 5
+		cfg.Workers = 30
 	}
 	return &Scraper{
 		cache:   c,
@@ -49,7 +49,6 @@ func New(c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Scraper {
 	}
 }
 
-// Starts crawling from the given seed pages.
 func (s *Scraper) Crawl(ctx context.Context, seeds []string) (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}
@@ -176,7 +175,8 @@ func (s *Scraper) processDepth(ctx context.Context, stats *Stats) (int, error) {
 		close(results)
 	}()
 
-	allTargets := make(map[string]struct{})
+	estimatedTargets := len(pages) * 400
+	allTargets := make(map[string]struct{}, estimatedTargets)
 	var firstError error
 
 	for result := range results {
@@ -219,7 +219,6 @@ func (s *Scraper) processDepth(ctx context.Context, stats *Stats) (int, error) {
 	return len(pages), nil
 }
 
-// processPageWorker processes a single page and returns individual stats instead of updating shared Stats.
 func (s *Scraper) processPageWorker(ctx context.Context, page *cache.Page) (targets []string, fetched, skipped bool, links int, err error) {
 	slog.Debug("fetching page", "title", page.Title)
 
@@ -265,11 +264,8 @@ func (s *Scraper) processPageWorker(ctx context.Context, page *cache.Page) (targ
 		targetTitles[i] = link.Title
 	}
 
-	if deleteErr := s.cache.DeleteLinksFromPage(page.ID); deleteErr != nil {
-		return nil, false, false, 0, fmt.Errorf("clearing old links: %w", deleteErr)
-	}
-	if addErr := s.cache.AddLinks(page.ID, cacheLinks); addErr != nil {
-		return nil, false, false, 0, fmt.Errorf("adding links: %w", addErr)
+	if replaceErr := s.cache.ReplaceLinks(page.ID, cacheLinks); replaceErr != nil {
+		return nil, false, false, 0, fmt.Errorf("replacing links: %w", replaceErr)
 	}
 
 	if updateErr := s.cache.UpdatePageStatus(page.Title, cache.StatusSuccess, result.ContentHash, ""); updateErr != nil {
@@ -281,7 +277,6 @@ func (s *Scraper) processPageWorker(ctx context.Context, page *cache.Page) (targ
 	return targetTitles, true, false, len(result.Links), nil
 }
 
-// Fetches a single page without BFS expansion.
 func (s *Scraper) FetchSingle(ctx context.Context, title string) (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}
@@ -313,7 +308,6 @@ func (s *Scraper) FetchSingle(ctx context.Context, title string) (*Stats, error)
 		stats.PagesSkipped = 1
 	}
 
-	// For single fetch, insert targets immediately
 	if len(targets) > 0 {
 		if err := s.cache.EnsureTargetPagesExist(targets); err != nil {
 			return stats, fmt.Errorf("creating target pages: %w", err)
