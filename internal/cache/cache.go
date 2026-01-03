@@ -4,6 +4,7 @@ package cache
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
@@ -61,7 +62,6 @@ func scanPage(s scanner) (*Page, error) {
 	return p, nil
 }
 
-// Returns nil if page not found.
 func (c *Cache) GetPage(title string) (*Page, error) {
 	row := c.db.QueryRow(`SELECT `+pageColumns+` FROM pages WHERE title = ?`, title)
 	p, err := scanPage(row)
@@ -75,7 +75,6 @@ func (c *Cache) GetPage(title string) (*Page, error) {
 	return p, nil
 }
 
-// Inserts a new page with pending status.
 func (c *Cache) CreatePage(title string) (*Page, error) {
 	result, err := c.db.Exec(`INSERT INTO pages (title) VALUES (?)`, title)
 	if err != nil {
@@ -100,7 +99,6 @@ func (c *Cache) GetOrCreatePage(title string) (*Page, error) {
 	return c.CreatePage(title)
 }
 
-// Marks a page as fetched with the given status.
 func (c *Cache) UpdatePageStatus(title string, status FetchStatus, contentHash, redirectTo string) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 
@@ -124,7 +122,6 @@ func (c *Cache) UpdatePageStatus(title string, status FetchStatus, contentHash, 
 	return nil
 }
 
-// Returns pages that need to be fetched, up to limit.
 func (c *Cache) GetPendingPages(limit int) ([]*Page, error) {
 	rows, err := c.db.Query(`
 		SELECT `+pageColumns+`
@@ -140,7 +137,6 @@ func (c *Cache) GetPendingPages(limit int) ([]*Page, error) {
 	return scanPages(rows)
 }
 
-// Returns successfully fetched pages older than the given duration.
 func (c *Cache) GetStalePages(olderThan time.Duration, limit int) ([]*Page, error) {
 	cutoff := time.Now().UTC().Add(-olderThan).Format(time.RFC3339)
 
@@ -159,7 +155,6 @@ func (c *Cache) GetStalePages(olderThan time.Duration, limit int) ([]*Page, erro
 	return scanPages(rows)
 }
 
-// Inserts links from a source page. Duplicates are ignored.
 func (c *Cache) AddLinks(sourceID int64, links []Link) error {
 	if len(links) == 0 {
 		return nil
@@ -171,22 +166,33 @@ func (c *Cache) AddLinks(sourceID int64, links []Link) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`
-		INSERT OR IGNORE INTO links (source_id, target_title, anchor_text)
-		VALUES (?, ?, ?)
-	`)
-	if err != nil {
-		return fmt.Errorf("preparing statement: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, link := range links {
-		var anchorPtr *string
-		if link.AnchorText.Valid {
-			anchorPtr = &link.AnchorText.String
+	const batchSize = 500
+	for i := 0; i < len(links); i += batchSize {
+		end := i + batchSize
+		if end > len(links) {
+			end = len(links)
 		}
-		if _, err := stmt.Exec(sourceID, link.TargetTitle, anchorPtr); err != nil {
-			return fmt.Errorf("inserting link to %q: %w", link.TargetTitle, err)
+		batch := links[i:end]
+
+		var placeholders []string
+		var args []interface{}
+		for _, link := range batch {
+			placeholders = append(placeholders, "(?, ?, ?)")
+			args = append(args, sourceID, link.TargetTitle)
+			if link.AnchorText.Valid {
+				args = append(args, link.AnchorText.String)
+			} else {
+				args = append(args, nil)
+			}
+		}
+
+		query := fmt.Sprintf(`
+			INSERT OR IGNORE INTO links (source_id, target_title, anchor_text)
+			VALUES %s
+		`, strings.Join(placeholders, ", "))
+
+		if _, err := tx.Exec(query, args...); err != nil {
+			return fmt.Errorf("inserting links batch: %w", err)
 		}
 	}
 
@@ -214,7 +220,6 @@ func (c *Cache) GetOutgoingLinks(sourceID int64) ([]string, error) {
 	return titles, rows.Err()
 }
 
-// Returns source page IDs that link to the given title.
 func (c *Cache) GetIncomingLinks(targetTitle string) ([]int64, error) {
 	rows, err := c.db.Query(`SELECT source_id FROM links WHERE target_title = ?`, targetTitle)
 	if err != nil {
@@ -233,7 +238,6 @@ func (c *Cache) GetIncomingLinks(targetTitle string) ([]int64, error) {
 	return ids, rows.Err()
 }
 
-// Removes all outgoing links from a page.
 func (c *Cache) DeleteLinksFromPage(sourceID int64) error {
 	_, err := c.db.Exec(`DELETE FROM links WHERE source_id = ?`, sourceID)
 	if err != nil {
@@ -242,7 +246,57 @@ func (c *Cache) DeleteLinksFromPage(sourceID int64) error {
 	return nil
 }
 
-// Creates pending page entries for link targets that don't exist.
+func (c *Cache) ReplaceLinks(sourceID int64, links []Link) error {
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM links WHERE source_id = ?`, sourceID); err != nil {
+		return fmt.Errorf("deleting old links: %w", err)
+	}
+
+	if len(links) == 0 {
+		return tx.Commit()
+	}
+
+	const batchSize = 500
+	for i := 0; i < len(links); i += batchSize {
+		end := i + batchSize
+		if end > len(links) {
+			end = len(links)
+		}
+		batch := links[i:end]
+
+		var placeholders []string
+		var args []interface{}
+		for _, link := range batch {
+			placeholders = append(placeholders, "(?, ?, ?)")
+			args = append(args, sourceID, link.TargetTitle)
+			if link.AnchorText.Valid {
+				args = append(args, link.AnchorText.String)
+			} else {
+				args = append(args, nil)
+			}
+		}
+
+		query := fmt.Sprintf(`
+			INSERT OR IGNORE INTO links (source_id, target_title, anchor_text)
+			VALUES %s
+		`, strings.Join(placeholders, ", "))
+
+		if _, err := tx.Exec(query, args...); err != nil {
+			return fmt.Errorf("inserting links batch: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+	return nil
+}
+
 func (c *Cache) EnsureTargetPagesExist(titles []string) error {
 	if len(titles) == 0 {
 		return nil
@@ -254,15 +308,28 @@ func (c *Cache) EnsureTargetPagesExist(titles []string) error {
 	}
 	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO pages (title) VALUES (?)`)
-	if err != nil {
-		return fmt.Errorf("preparing statement: %w", err)
-	}
-	defer stmt.Close()
+	const batchSize = 500
+	for i := 0; i < len(titles); i += batchSize {
+		end := i + batchSize
+		if end > len(titles) {
+			end = len(titles)
+		}
+		batch := titles[i:end]
 
-	for _, title := range titles {
-		if _, err := stmt.Exec(title); err != nil {
-			return fmt.Errorf("inserting page %q: %w", title, err)
+		var placeholders []string
+		var args []interface{}
+		for _, title := range batch {
+			placeholders = append(placeholders, "(?)")
+			args = append(args, title)
+		}
+
+		query := fmt.Sprintf(`
+			INSERT OR IGNORE INTO pages (title)
+			VALUES %s
+		`, strings.Join(placeholders, ", "))
+
+		if _, err := tx.Exec(query, args...); err != nil {
+			return fmt.Errorf("inserting pages batch: %w", err)
 		}
 	}
 
@@ -293,31 +360,18 @@ func scanPages(rows *sql.Rows) ([]*Page, error) {
 	return pages, rows.Err()
 }
 
-// Holds bulk data for graph construction.
 type GraphData struct {
-	Nodes []string     // Titles of successfully fetched pages (for isolated nodes)
+	Nodes []string     // Isolated pages with no outgoing links
 	Edges [][2]string  // [source, target] pairs
 }
 
-// Returns all data needed to construct the link graph.
 func (c *Cache) GetGraphData() (*GraphData, error) {
-	var edgeCount int
-	err := c.db.QueryRow(`
-		SELECT COUNT(*) FROM links l
-		JOIN pages p ON p.id = l.source_id
-		WHERE p.fetch_status = 'success'
-	`).Scan(&edgeCount)
-	if err != nil {
-		return nil, fmt.Errorf("counting edges: %w", err)
-	}
-
-	data := &GraphData{
-		Edges: make([][2]string, 0, edgeCount),
-	}
+	data := &GraphData{}
 
 	rows, err := c.db.Query(`
 		SELECT p.title, l.target_title
 		FROM links l
+		INDEXED BY idx_links_source_target_covering
 		JOIN pages p ON p.id = l.source_id
 		WHERE p.fetch_status = 'success'
 	`)
@@ -339,8 +393,8 @@ func (c *Cache) GetGraphData() (*GraphData, error) {
 
 	rows, err = c.db.Query(`
 		SELECT p.title FROM pages p
-		WHERE p.fetch_status = 'success'
-		AND NOT EXISTS (SELECT 1 FROM links l WHERE l.source_id = p.id)
+		LEFT JOIN links l ON l.source_id = p.id
+		WHERE p.fetch_status = 'success' AND l.id IS NULL
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("querying isolated nodes: %w", err)
