@@ -1,30 +1,23 @@
--- migrations/002_optimization_indexes.sql
--- Optimization indexes for improved query performance (CQ-003)
+-- Performance optimization indexes
 --
--- These indexes are designed for the most common query patterns:
--- 1. GetPendingPages: ordered pagination of pending pages
--- 2. GetGraphData: bulk loading of successful pages for graph construction
+-- These indexes target the most common query patterns identified during profiling:
+-- 1. GetPendingPages: Fetch next batch of pages to crawl (with pagination)
+-- 2. GetGraphData: Bulk load all successful pages for graph construction
 
--- ============================================================================
--- Composite index for pending pages with ordering
--- ============================================================================
--- Optimizes: SELECT ... FROM pages WHERE fetch_status = 'pending' ORDER BY created_at
--- The composite index allows SQLite to use a single index scan for both filter and sort
+-- Composite index for pending page queries with ordering
+-- Query: SELECT ... FROM pages WHERE fetch_status = 'pending' ORDER BY created_at LIMIT N
+-- Without this, SQLite would need separate index lookups for filter + sort
+-- With this, it can do a single index scan (fetch_status, created_at)
 CREATE INDEX IF NOT EXISTS idx_pages_pending_ordered
     ON pages(fetch_status, created_at)
     WHERE fetch_status = 'pending';
 
--- ============================================================================
--- Partial index for successful pages
--- ============================================================================
--- Optimizes: SELECT ... FROM pages WHERE fetch_status = 'success'
--- This is more efficient than the general fetch_status index for graph loading
--- since it only indexes the rows we care about
+-- Partial index for successful pages only
+-- Query: SELECT ... FROM pages WHERE fetch_status = 'success'
+-- More efficient than general idx_pages_fetch_status because it only
+-- indexes successful pages, making it smaller and faster for graph loading
 CREATE INDEX IF NOT EXISTS idx_pages_success
     ON pages(fetch_status)
     WHERE fetch_status = 'success';
 
--- ============================================================================
--- Record this migration
--- ============================================================================
 INSERT INTO schema_migrations (version, name) VALUES (2, 'optimization_indexes');

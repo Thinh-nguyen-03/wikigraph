@@ -1,39 +1,32 @@
--- migrations/001_initial_schema.sql
--- WikiGraph Database Schema v1.0
+-- WikiGraph Database Schema
 --
 -- Design principles:
--- - ISO8601 TEXT timestamps for portability and sorting
--- - CHECK constraints for data validation at the database level
+-- - ISO8601 TEXT timestamps for SQLite compatibility and sortability
+-- - CHECK constraints enforce data integrity at database level
 -- - No AUTOINCREMENT (unnecessary overhead in SQLite)
--- - Explicit state tracking for fetch operations
--- - Foreign key constraints with CASCADE delete
+-- - CASCADE deletes maintain referential integrity
 --
 -- IMPORTANT: Foreign keys are OFF by default in SQLite!
--- The application MUST run: PRAGMA foreign_keys = ON;
+-- Application must run: PRAGMA foreign_keys = ON
 
--- ============================================================================
--- Schema Migrations Table
--- ============================================================================
--- Tracks which migrations have been applied to this database.
--- This enables safe, incremental schema changes and rollbacks.
-
+-- Tracks applied migrations for safe incremental schema changes
 CREATE TABLE IF NOT EXISTS schema_migrations (
     version     INTEGER PRIMARY KEY,
     name        TEXT NOT NULL,
     applied_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
 
--- ============================================================================
--- Pages Table
--- ============================================================================
--- Stores metadata about fetched Wikipedia pages.
+-- Pages: Metadata for crawled Wikipedia pages
 --
--- State machine for fetch_status:
---   pending   -> Initial state, page has not been fetched yet
---   success   -> Page was fetched successfully, links extracted
---   redirect  -> Page redirects to another page (redirect_to contains target)
---   not_found -> Page does not exist (HTTP 404)
---   error     -> Fetch failed due to network error, rate limit, etc.
+-- fetch_status state machine:
+--   pending   -> Initial state when page is discovered via link
+--   success   -> Page fetched successfully, links extracted
+--   redirect  -> Page redirects to another (redirect_to contains target)
+--   not_found -> HTTP 404, page doesn't exist
+--   error     -> Network error, rate limit, or other failure
+--
+-- Constraints ensure redirect_to is set when status is redirect,
+-- and fetched_at is set for completed fetches
 
 CREATE TABLE IF NOT EXISTS pages (
     id            INTEGER PRIMARY KEY,
@@ -46,28 +39,17 @@ CREATE TABLE IF NOT EXISTS pages (
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
     updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
 
-    -- Business rule: redirect_to must be set when status is 'redirect'
-    CHECK(
-        (fetch_status != 'redirect') OR
-        (fetch_status = 'redirect' AND redirect_to IS NOT NULL)
-    ),
-
-    -- Business rule: fetched_at should be set for success/redirect/not_found
-    CHECK(
-        (fetch_status IN ('pending', 'error')) OR
-        (fetch_status IN ('success', 'redirect', 'not_found') AND fetched_at IS NOT NULL)
-    )
+    CHECK((fetch_status != 'redirect') OR (redirect_to IS NOT NULL)),
+    CHECK((fetch_status IN ('pending', 'error')) OR (fetched_at IS NOT NULL))
 );
 
--- ============================================================================
--- Links Table
--- ============================================================================
--- Stores directed edges from source pages to target pages.
+-- Links: Directed edges representing hyperlinks between Wikipedia pages
 --
 -- Design decision: target_title is TEXT, not a foreign key to pages.id
 -- This allows storing links to pages we haven't crawled yet without
--- creating placeholder records.
-
+-- creating placeholder records. The graph loader resolves these dynamically.
+--
+-- UNIQUE constraint on (source_id, target_title) prevents duplicate edges
 CREATE TABLE IF NOT EXISTS links (
     id            INTEGER PRIMARY KEY,
     source_id     INTEGER NOT NULL,
@@ -75,45 +57,30 @@ CREATE TABLE IF NOT EXISTS links (
     anchor_text   TEXT,
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
 
-    -- Length constraints to prevent unbounded storage
     CHECK(length(target_title) <= 512),
     CHECK(anchor_text IS NULL OR length(anchor_text) <= 1024),
-
-    -- Foreign key with cascade delete
     FOREIGN KEY (source_id) REFERENCES pages(id) ON DELETE CASCADE,
-
-    -- Prevent duplicate links from same source to same target
     UNIQUE(source_id, target_title)
 );
 
--- ============================================================================
--- Indexes
--- ============================================================================
--- Note: UNIQUE constraint on pages.title already creates an implicit index,
--- so we don't need to create idx_pages_title explicitly.
+-- Indexes for common query patterns
+-- Note: pages.title already has implicit index from UNIQUE constraint
 
--- Find stale cache entries for refresh (only for successfully fetched pages)
--- This is a partial index - only indexes rows where fetch_status = 'success'
+-- Partial index for cache refresh queries (only successful pages can be stale)
 CREATE INDEX IF NOT EXISTS idx_pages_fetched_at
     ON pages(fetched_at)
     WHERE fetch_status = 'success';
 
--- Find pages by status (for crawl queue management)
--- Used by: "SELECT * FROM pages WHERE fetch_status = 'pending' LIMIT 100"
+-- General status lookup for crawl queue management
 CREATE INDEX IF NOT EXISTS idx_pages_fetch_status
     ON pages(fetch_status);
 
--- Get all outgoing links from a page (most common query in pathfinding)
--- Used by: "SELECT target_title FROM links WHERE source_id = ?"
+-- Forward graph traversal: get all outgoing links from a page
 CREATE INDEX IF NOT EXISTS idx_links_source_id
     ON links(source_id);
 
--- Find all incoming links to a page (backlinks, reverse lookup)
--- Used by: "SELECT source_id FROM links WHERE target_title = ?"
+-- Backward graph traversal: find all pages linking to this page
 CREATE INDEX IF NOT EXISTS idx_links_target_title
     ON links(target_title);
 
--- ============================================================================
--- Record this migration
--- ============================================================================
 INSERT INTO schema_migrations (version, name) VALUES (1, 'initial_schema');
