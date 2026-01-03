@@ -15,13 +15,11 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-// Wraps a sql.DB connection with WikiGraph-specific functionality.
 type DB struct {
 	*sql.DB
 	path string
 }
 
-// Creates a new database connection with optimal SQLite settings.
 func Open(path string) (*DB, error) {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {
@@ -49,6 +47,8 @@ func Open(path string) (*DB, error) {
 		"PRAGMA cache_size = -64000",
 		"PRAGMA temp_store = MEMORY",
 		"PRAGMA mmap_size = 268435456",
+		"PRAGMA wal_autocheckpoint = 1000",
+		"PRAGMA journal_size_limit = 67108864",
 	}
 
 	for _, pragma := range pragmas {
@@ -70,7 +70,6 @@ func (db *DB) Path() string {
 	return db.path
 }
 
-// Runs all pending database migrations.
 func (db *DB) Migrate() error {
 	migrations := []struct {
 		version int
@@ -79,6 +78,7 @@ func (db *DB) Migrate() error {
 	}{
 		{1, "migrations/001_initial_schema.sql", "initial_schema"},
 		{2, "migrations/002_optimization_indexes.sql", "optimization_indexes"},
+		{3, "migrations/003_graph_optimization.sql", "graph_optimization"},
 	}
 
 	var currentVersion int
@@ -167,7 +167,6 @@ func (db *DB) Stats() (*Stats, error) {
 		return nil, fmt.Errorf("querying page stats: %w", err)
 	}
 
-	// Links count requires separate query (different table)
 	err = db.QueryRow(`SELECT COUNT(*) FROM links`).Scan(&stats.TotalLinks)
 	if err != nil {
 		return nil, fmt.Errorf("querying link count: %w", err)
@@ -181,7 +180,6 @@ func (db *DB) Stats() (*Stats, error) {
 	return stats, nil
 }
 
-// Forces a WAL checkpoint, useful before backups.
 func (db *DB) Checkpoint() error {
 	_, err := db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	if err != nil {
@@ -190,7 +188,6 @@ func (db *DB) Checkpoint() error {
 	return nil
 }
 
-// Reclaims unused space in the database file.
 func (db *DB) Vacuum() error {
 	_, err := db.Exec("VACUUM")
 	if err != nil {
@@ -199,11 +196,18 @@ func (db *DB) Vacuum() error {
 	return nil
 }
 
-// Updates query planner statistics for better performance.
 func (db *DB) Analyze() error {
 	_, err := db.Exec("ANALYZE")
 	if err != nil {
 		return fmt.Errorf("analyzing database: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) Optimize() error {
+	_, err := db.Exec("PRAGMA optimize")
+	if err != nil {
+		return fmt.Errorf("optimizing database: %w", err)
 	}
 	return nil
 }
