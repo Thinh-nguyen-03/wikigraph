@@ -26,8 +26,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Database.Path != "wikigraph.db" {
 		t.Errorf("Database.Path = %q, want %q", cfg.Database.Path, "wikigraph.db")
 	}
-	if cfg.Scraper.RateLimit != 10.0 {
-		t.Errorf("Scraper.RateLimit = %v, want %v", cfg.Scraper.RateLimit, 10.0)
+	if cfg.Scraper.RateLimit != 100.0 {
+		t.Errorf("Scraper.RateLimit = %v, want %v", cfg.Scraper.RateLimit, 100.0)
 	}
 	if cfg.Scraper.MaxDepth != 3 {
 		t.Errorf("Scraper.MaxDepth = %d, want %d", cfg.Scraper.MaxDepth, 3)
@@ -35,8 +35,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Scraper.RequestTimeout != 30*time.Second {
 		t.Errorf("Scraper.RequestTimeout = %v, want %v", cfg.Scraper.RequestTimeout, 30*time.Second)
 	}
-	if cfg.Scraper.MaxConcurrent != 5 {
-		t.Errorf("Scraper.MaxConcurrent = %d, want %d", cfg.Scraper.MaxConcurrent, 5)
+	if cfg.Scraper.MaxConcurrent != 30 {
+		t.Errorf("Scraper.MaxConcurrent = %d, want %d", cfg.Scraper.MaxConcurrent, 30)
 	}
 	if cfg.Log.Level != "info" {
 		t.Errorf("Log.Level = %q, want %q", cfg.Log.Level, "info")

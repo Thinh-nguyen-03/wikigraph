@@ -39,10 +39,10 @@ var defaultConfig = Config{
 		Path: "wikigraph.db",
 	},
 	Scraper: ScraperConfig{
-		RateLimit:       10.0,
+		RateLimit:       100.0,
 		MaxDepth:        3,
 		RequestTimeout:  30 * time.Second,
-		MaxConcurrent:   5,
+		MaxConcurrent:   30,
 		UserAgent:       "WikiGraph/1.0 (https://github.com/Thinh-nguyen-03/wikigraph)",
 		WikipediaAPIURL: "https://en.wikipedia.org/api/rest_v1",
 	},
