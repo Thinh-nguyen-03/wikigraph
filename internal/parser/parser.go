@@ -33,12 +33,10 @@ var excludedNamespaces = map[string]bool{
 	"Module":         true,
 }
 
-// Parses HTML document and returns internal Wikipedia article links.
 func ExtractLinks(doc *goquery.Document) []Link {
 	seen := make(map[string]bool)
 	var links []Link
 
-	// Only look for links in the main content area
 	doc.Find("#mw-content-text a[href^='/wiki/']").Each(func(_ int, s *goquery.Selection) {
 		href, exists := s.Attr("href")
 		if !exists {
@@ -60,7 +58,6 @@ func ExtractLinks(doc *goquery.Document) []Link {
 	return links
 }
 
-// Parses HTML string and returns internal Wikipedia article links.
 func ExtractLinksFromHTML(html string) ([]Link, error) {
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
 	if err != nil {
@@ -69,7 +66,6 @@ func ExtractLinksFromHTML(html string) ([]Link, error) {
 	return ExtractLinks(doc), nil
 }
 
-// Parses HTML bytes and extracts internal Wikipedia article links.
 func ExtractLinksFromBytes(html []byte) ([]Link, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(html))
 	if err != nil {
@@ -79,7 +75,6 @@ func ExtractLinksFromBytes(html []byte) ([]Link, error) {
 }
 
 func extractTitle(href string) string {
-	// href format: /wiki/Article_Name or /wiki/Article_Name#section
 	if !strings.HasPrefix(href, "/wiki/") {
 		return ""
 	}
@@ -95,7 +90,6 @@ func extractTitle(href string) string {
 		return path
 	}
 
-	// Replace underscores with spaces (Wikipedia convention)
 	return strings.ReplaceAll(decoded, "_", " ")
 }
 

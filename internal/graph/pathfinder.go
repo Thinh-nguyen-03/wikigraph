@@ -1,6 +1,5 @@
 package graph
 
-// Holds the result of a pathfinding operation.
 type PathResult struct {
 	Found    bool
 	Path     []string
@@ -53,12 +52,10 @@ func (q *nodeQueue) reset() {
 	q.tail = 0
 }
 
-// Finds the shortest path using BFS.
 func (g *Graph) FindPath(from, to string) PathResult {
 	return g.FindPathWithLimit(from, to, -1)
 }
 
-// FindPathWithLimit finds the shortest path with a maximum depth. Use -1 for unlimited.
 func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -126,7 +123,6 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 	return PathResult{Explored: explored}
 }
 
-// Uses bidirectional BFS for faster results on large graphs.
 func (g *Graph) FindPathBidirectional(from, to string) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -228,17 +224,14 @@ func nextLevel(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, fo
 }
 
 func buildBidiPath(parentF, parentB map[*Node]*Node, from, to, meeting *Node, explored int) PathResult {
-	// Build path from start to meeting point
 	var pathF []*Node
 	for n := meeting; n != nil; n = parentF[n] {
 		pathF = append(pathF, n)
 	}
-	// Reverse to get from -> meeting order
 	for i, j := 0, len(pathF)-1; i < j; i, j = i+1, j-1 {
 		pathF[i], pathF[j] = pathF[j], pathF[i]
 	}
 
-	// Build path from meeting point to end (skip meeting, already included)
 	for n := parentB[meeting]; n != nil; n = parentB[n] {
 		pathF = append(pathF, n)
 	}

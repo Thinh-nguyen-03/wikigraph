@@ -3,14 +3,12 @@ package graph
 
 import "sync"
 
-// Represents a Wikipedia page in the graph.
 type Node struct {
 	Title    string
 	OutLinks []*Node
 	InLinks  []*Node
 }
 
-// Thread-safe directed graph of Wikipedia pages.
 type Graph struct {
 	nodes map[string]*Node
 	edges int
@@ -21,12 +19,10 @@ func New() *Graph {
 	return &Graph{nodes: make(map[string]*Node)}
 }
 
-// Creates a graph with pre-allocated capacity for efficiency.
 func NewWithCapacity(nodeCapacity int) *Graph {
 	return &Graph{nodes: make(map[string]*Node, nodeCapacity)}
 }
 
-// Returns existing node or creates a new one.
 func (g *Graph) AddNode(title string) *Node {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -42,7 +38,6 @@ func (g *Graph) addNode(title string) *Node {
 	return n
 }
 
-// Adds a directed edge, creating nodes if needed.
 func (g *Graph) AddEdge(source, target string) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -52,7 +47,7 @@ func (g *Graph) AddEdge(source, target string) {
 
 	for _, existing := range src.OutLinks {
 		if existing == tgt {
-			return // Edge already exists, skip
+			return
 		}
 	}
 
