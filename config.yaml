@@ -1,0 +1,27 @@
+# WikiGraph Configuration
+# This file provides optimized defaults for faster crawling
+
+database:
+  path: "wikigraph.db"
+
+scraper:
+  # Maximum requests per second to Wikipedia
+  rate_limit: 100.0
+
+  # Maximum crawl depth (can be overridden by --depth flag)
+  max_depth: 3
+
+  # Request timeout for Wikipedia API
+  request_timeout: 30s
+
+  # Number of concurrent workers for fetching pages
+  max_concurrent: 30
+
+  # User agent for Wikipedia requests
+  user_agent: "WikiGraph/1.0 (https://github.com/Thinh-nguyen-03/wikigraph)"
+
+  # Wikipedia API base URL
+  wikipedia_api_url: "https://en.wikipedia.org/api/rest_v1"
+
+log:
+  level: "info"  # Options: debug, info, warn, error
