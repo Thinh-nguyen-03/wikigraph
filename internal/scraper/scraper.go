@@ -3,7 +3,6 @@ package scraper
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -259,7 +258,6 @@ func (s *Scraper) processPageWorker(ctx context.Context, page *cache.Page) (targ
 	for i, link := range result.Links {
 		cacheLinks[i] = cache.Link{
 			TargetTitle: link.Title,
-			AnchorText:  sql.NullString{String: link.AnchorText, Valid: link.AnchorText != ""},
 		}
 		targetTitles[i] = link.Title
 	}

@@ -1,7 +1,6 @@
 package cache
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -167,7 +166,7 @@ func TestAddLinks(t *testing.T) {
 	page, _ := c.CreatePage("Source")
 
 	links := []Link{
-		{TargetTitle: "Target1", AnchorText: sql.NullString{String: "link text", Valid: true}},
+		{TargetTitle: "Target1"},
 		{TargetTitle: "Target2"},
 		{TargetTitle: "Target3"},
 	}

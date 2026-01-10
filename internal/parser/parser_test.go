@@ -26,20 +26,15 @@ func TestExtractLinks(t *testing.T) {
 		t.Fatalf("got %d links, want 3", len(links))
 	}
 
-	expected := map[string]string{
-		"Physics":           "physics",
-		"Albert Einstein":   "Albert Einstein",
-		"Quantum mechanics": "quantum mechanics",
+	expected := map[string]bool{
+		"Physics":           true,
+		"Albert Einstein":   true,
+		"Quantum mechanics": true,
 	}
 
 	for _, link := range links {
-		wantAnchor, ok := expected[link.Title]
-		if !ok {
+		if !expected[link.Title] {
 			t.Errorf("unexpected link: %q", link.Title)
-			continue
-		}
-		if link.AnchorText != wantAnchor {
-			t.Errorf("AnchorText for %q = %q, want %q", link.Title, link.AnchorText, wantAnchor)
 		}
 	}
 }

@@ -43,7 +43,6 @@ type Link struct {
 	ID          int64
 	SourceID    int64
 	TargetTitle string
-	AnchorText  sql.NullString
 	CreatedAt   string
 }
 
@@ -177,17 +176,12 @@ func (c *Cache) AddLinks(sourceID int64, links []Link) error {
 		var placeholders []string
 		var args []interface{}
 		for _, link := range batch {
-			placeholders = append(placeholders, "(?, ?, ?)")
+			placeholders = append(placeholders, "(?, ?)")
 			args = append(args, sourceID, link.TargetTitle)
-			if link.AnchorText.Valid {
-				args = append(args, link.AnchorText.String)
-			} else {
-				args = append(args, nil)
-			}
 		}
 
 		query := fmt.Sprintf(`
-			INSERT OR IGNORE INTO links (source_id, target_title, anchor_text)
+			INSERT OR IGNORE INTO links (source_id, target_title)
 			VALUES %s
 		`, strings.Join(placeholders, ", "))
 
@@ -272,17 +266,12 @@ func (c *Cache) ReplaceLinks(sourceID int64, links []Link) error {
 		var placeholders []string
 		var args []interface{}
 		for _, link := range batch {
-			placeholders = append(placeholders, "(?, ?, ?)")
+			placeholders = append(placeholders, "(?, ?)")
 			args = append(args, sourceID, link.TargetTitle)
-			if link.AnchorText.Valid {
-				args = append(args, link.AnchorText.String)
-			} else {
-				args = append(args, nil)
-			}
 		}
 
 		query := fmt.Sprintf(`
-			INSERT OR IGNORE INTO links (source_id, target_title, anchor_text)
+			INSERT OR IGNORE INTO links (source_id, target_title)
 			VALUES %s
 		`, strings.Join(placeholders, ", "))
 

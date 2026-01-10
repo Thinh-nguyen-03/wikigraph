@@ -11,8 +11,7 @@ import (
 )
 
 type Link struct {
-	Title      string
-	AnchorText string
+	Title string
 }
 
 var excludedNamespaces = map[string]bool{
@@ -50,8 +49,7 @@ func ExtractLinks(doc *goquery.Document) []Link {
 
 		seen[title] = true
 		links = append(links, Link{
-			Title:      title,
-			AnchorText: strings.TrimSpace(s.Text()),
+			Title: title,
 		})
 	})
 
