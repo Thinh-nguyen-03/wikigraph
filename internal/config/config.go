@@ -15,6 +15,7 @@ type Config struct {
 	Database DatabaseConfig
 	Scraper  ScraperConfig
 	Log      LogConfig
+	API      APIConfig
 }
 
 type DatabaseConfig struct {
@@ -34,6 +35,19 @@ type LogConfig struct {
 	Level string
 }
 
+type APIConfig struct {
+	Host            string
+	Port            int
+	EnableCORS      bool
+	CORSOrigins     []string
+	ReadTimeout     time.Duration
+	WriteTimeout    time.Duration
+	ShutdownTimeout time.Duration
+	RateLimit       float64
+	RateBurst       int
+	Production      bool
+}
+
 var defaultConfig = Config{
 	Database: DatabaseConfig{
 		Path: "wikigraph.db",
@@ -48,6 +62,18 @@ var defaultConfig = Config{
 	},
 	Log: LogConfig{
 		Level: "info",
+	},
+	API: APIConfig{
+		Host:            "localhost",
+		Port:            8080,
+		EnableCORS:      true,
+		CORSOrigins:     []string{"*"},
+		ReadTimeout:     30 * time.Second,
+		WriteTimeout:    30 * time.Second,
+		ShutdownTimeout: 10 * time.Second,
+		RateLimit:       100.0,
+		RateBurst:       200,
+		Production:      false,
 	},
 }
 
@@ -84,6 +110,17 @@ func Load() (*Config, error) {
 	cfg.Scraper.WikipediaAPIURL = v.GetString("scraper.wikipedia_api_url")
 	cfg.Log.Level = v.GetString("log.level")
 
+	cfg.API.Host = v.GetString("api.host")
+	cfg.API.Port = v.GetInt("api.port")
+	cfg.API.EnableCORS = v.GetBool("api.enable_cors")
+	cfg.API.CORSOrigins = v.GetStringSlice("api.cors_origins")
+	cfg.API.ReadTimeout = v.GetDuration("api.read_timeout")
+	cfg.API.WriteTimeout = v.GetDuration("api.write_timeout")
+	cfg.API.ShutdownTimeout = v.GetDuration("api.shutdown_timeout")
+	cfg.API.RateLimit = v.GetFloat64("api.rate_limit")
+	cfg.API.RateBurst = v.GetInt("api.rate_burst")
+	cfg.API.Production = v.GetBool("api.production")
+
 	return cfg, nil
 }
 
@@ -96,6 +133,17 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scraper.user_agent", defaultConfig.Scraper.UserAgent)
 	v.SetDefault("scraper.wikipedia_api_url", defaultConfig.Scraper.WikipediaAPIURL)
 	v.SetDefault("log.level", defaultConfig.Log.Level)
+
+	v.SetDefault("api.host", defaultConfig.API.Host)
+	v.SetDefault("api.port", defaultConfig.API.Port)
+	v.SetDefault("api.enable_cors", defaultConfig.API.EnableCORS)
+	v.SetDefault("api.cors_origins", defaultConfig.API.CORSOrigins)
+	v.SetDefault("api.read_timeout", defaultConfig.API.ReadTimeout)
+	v.SetDefault("api.write_timeout", defaultConfig.API.WriteTimeout)
+	v.SetDefault("api.shutdown_timeout", defaultConfig.API.ShutdownTimeout)
+	v.SetDefault("api.rate_limit", defaultConfig.API.RateLimit)
+	v.SetDefault("api.rate_burst", defaultConfig.API.RateBurst)
+	v.SetDefault("api.production", defaultConfig.API.Production)
 }
 
 func userConfigDir() string {

@@ -73,3 +73,82 @@ func (g *Graph) EdgeCount() int {
 	defer g.mu.RUnlock()
 	return g.edges
 }
+
+// Subgraph represents a subset of the graph.
+type Subgraph struct {
+	Nodes []SubgraphNode
+	Edges []SubgraphEdge
+}
+
+// SubgraphNode represents a node in a subgraph with distance from center.
+type SubgraphNode struct {
+	Title string
+	Hops  int
+}
+
+// SubgraphEdge represents an edge in a subgraph.
+type SubgraphEdge struct {
+	Source string
+	Target string
+}
+
+// GetNeighborhood returns the N-hop neighborhood around a node using BFS.
+func (g *Graph) GetNeighborhood(title string, maxDepth, maxNodes int) *Subgraph {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	center := g.nodes[title]
+	if center == nil {
+		return nil
+	}
+
+	result := &Subgraph{
+		Nodes: make([]SubgraphNode, 0, maxNodes),
+		Edges: make([]SubgraphEdge, 0),
+	}
+
+	// Track visited nodes with their hop distance
+	visited := make(map[*Node]int)
+	visited[center] = 0
+	result.Nodes = append(result.Nodes, SubgraphNode{Title: title, Hops: 0})
+
+	// BFS queue: pairs of (node, depth)
+	type queueItem struct {
+		node  *Node
+		depth int
+	}
+	queue := []queueItem{{center, 0}}
+
+	for len(queue) > 0 && len(result.Nodes) < maxNodes {
+		item := queue[0]
+		queue = queue[1:]
+
+		if item.depth >= maxDepth {
+			continue
+		}
+
+		// Process outgoing links
+		for _, neighbor := range item.node.OutLinks {
+			// Add edge (even if neighbor was visited, we want all edges)
+			result.Edges = append(result.Edges, SubgraphEdge{
+				Source: item.node.Title,
+				Target: neighbor.Title,
+			})
+
+			// Add node if not visited
+			if _, seen := visited[neighbor]; !seen {
+				if len(result.Nodes) >= maxNodes {
+					break
+				}
+				visited[neighbor] = item.depth + 1
+				result.Nodes = append(result.Nodes, SubgraphNode{
+					Title: neighbor.Title,
+					Hops:  item.depth + 1,
+				})
+				queue = append(queue, queueItem{neighbor, item.depth + 1})
+			}
+		}
+	}
+
+	return result
+}

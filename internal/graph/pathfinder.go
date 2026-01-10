@@ -100,6 +100,7 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 					continue
 				}
 
+				visited[neighbor] = true
 				parent[neighbor] = current
 				if neighbor == toNode {
 					return PathResult{
@@ -110,7 +111,6 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 					}
 				}
 
-				visited[neighbor] = true
 				queue.push(neighbor)
 				nextLevelCount++
 			}
@@ -124,6 +124,10 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 }
 
 func (g *Graph) FindPathBidirectional(from, to string) PathResult {
+	return g.FindPathBidirectionalWithLimit(from, to, -1)
+}
+
+func (g *Graph) FindPathBidirectionalWithLimit(from, to string, maxDepth int) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -138,89 +142,77 @@ func (g *Graph) FindPathBidirectional(from, to string) PathResult {
 		return PathResult{Found: true, Path: []string{from}, Hops: 0, Explored: 1}
 	}
 
-	// Forward search state (using OutLinks)
 	visitedF := map[*Node]bool{fromNode: true}
 	parentF := map[*Node]*Node{}
 	queueF := []*Node{fromNode}
 
-	// Backward search state (using InLinks)
 	visitedB := map[*Node]bool{toNode: true}
 	parentB := map[*Node]*Node{}
 	queueB := []*Node{toNode}
 
 	explored := 0
+	depth := 0
 
 	for len(queueF) > 0 && len(queueB) > 0 {
-		// Expand smaller frontier first for efficiency
-		if len(queueF) <= len(queueB) {
-			if meeting := expandForward(queueF, visitedF, parentF, visitedB, &explored); meeting != nil {
-				return buildBidiPath(parentF, parentB, fromNode, toNode, meeting, explored)
-			}
-			queueF = nextLevel(queueF, visitedF, parentF, true)
-		} else {
-			if meeting := expandBackward(queueB, visitedB, parentB, visitedF, &explored); meeting != nil {
-				return buildBidiPath(parentF, parentB, fromNode, toNode, meeting, explored)
-			}
-			queueB = nextLevel(queueB, visitedB, parentB, false)
+		if maxDepth >= 0 && depth >= maxDepth {
+			break
 		}
+
+		if len(queueF) <= len(queueB) {
+			var meeting *Node
+			queueF, meeting = expandForward(queueF, visitedF, parentF, visitedB, &explored)
+			if meeting != nil {
+				return buildBidiPath(parentF, parentB, fromNode, toNode, meeting, explored)
+			}
+		} else {
+			var meeting *Node
+			queueB, meeting = expandBackward(queueB, visitedB, parentB, visitedF, &explored)
+			if meeting != nil {
+				return buildBidiPath(parentF, parentB, fromNode, toNode, meeting, explored)
+			}
+		}
+		depth++
 	}
 
 	return PathResult{Explored: explored}
 }
 
-func expandForward(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, other map[*Node]bool, explored *int) *Node {
+func expandForward(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, other map[*Node]bool, explored *int) ([]*Node, *Node) {
+	var nextFrontier []*Node
 	for _, node := range queue {
 		(*explored)++
 		for _, neighbor := range node.OutLinks {
 			if visited[neighbor] {
 				continue
 			}
+			visited[neighbor] = true
 			parent[neighbor] = node
 			if other[neighbor] {
-				return neighbor
+				return nil, neighbor
 			}
-			visited[neighbor] = true
+			nextFrontier = append(nextFrontier, neighbor)
 		}
 	}
-	return nil
+	return nextFrontier, nil
 }
 
-func expandBackward(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, other map[*Node]bool, explored *int) *Node {
+func expandBackward(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, other map[*Node]bool, explored *int) ([]*Node, *Node) {
+	var nextFrontier []*Node
 	for _, node := range queue {
 		(*explored)++
 		for _, neighbor := range node.InLinks {
 			if visited[neighbor] {
 				continue
 			}
+			visited[neighbor] = true
 			parent[neighbor] = node
 			if other[neighbor] {
-				return neighbor
+				return nil, neighbor
 			}
-			visited[neighbor] = true
+			nextFrontier = append(nextFrontier, neighbor)
 		}
 	}
-	return nil
-}
-
-func nextLevel(queue []*Node, visited map[*Node]bool, parent map[*Node]*Node, forward bool) []*Node {
-	var next []*Node
-	for _, node := range queue {
-		var neighbors []*Node
-		if forward {
-			neighbors = node.OutLinks
-		} else {
-			neighbors = node.InLinks
-		}
-		for _, neighbor := range neighbors {
-			if !visited[neighbor] {
-				continue
-			}
-			if parent[neighbor] == node {
-				next = append(next, neighbor)
-			}
-		}
-	}
-	return next
+	return nextFrontier, nil
 }
 
 func buildBidiPath(parentF, parentB map[*Node]*Node, from, to, meeting *Node, explored int) PathResult {
