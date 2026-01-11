@@ -17,7 +17,7 @@ A high-performance Wikipedia knowledge graph tool that crawls Wikipedia, builds 
 
 ## Features
 
-✅ **Implemented**:
+**Implemented**:
 - **Wikipedia Scraping**: Concurrent fetching (30 workers) with intelligent caching and rate limiting
 - **Knowledge Graph**: In-memory graph with persistent disk caching for instant startup
 - **Blazing Fast Pathfinding**: BFS and bidirectional search with < 50ms response times
@@ -27,7 +27,7 @@ A high-performance Wikipedia knowledge graph tool that crawls Wikipedia, builds 
 - **Interactive Visualization**: Explore N-hop neighborhoods via API
 - **Performance Optimized**: Handles 10M+ links with < 2 second startup (600x improvement)
 
-🚧 **Planned**:
+**Planned**:
 - **Semantic Similarity**: Discover related pages using word embeddings (Phase 3)
 - **Advanced UI**: Web interface with interactive graph visualization (Phase 5)
 
@@ -263,10 +263,10 @@ After analysis, we determined that the proper solution is migrating to a special
 **Read the full analysis:** [Graph Database Migration Plan](docs/graph-database-migration.md)
 
 This document demonstrates:
-- ✅ Root cause analysis with performance measurements
-- ✅ Evaluation of 5 different solutions
-- ✅ Production-scale architectural decision making
-- ✅ Honest assessment of when to use the right tool
+- Root cause analysis with performance measurements
+- Evaluation of 5 different solutions
+- Production-scale architectural decision making
+- Honest assessment of when to use the right tool
 
 ---
 
@@ -488,7 +488,7 @@ staticcheck ./...
 
 ## Documentation
 
-- [**Graph Database Migration**](docs/graph-database-migration.md) - **Architectural decision document for Neo4j migration** ⭐
+- [**Graph Database Migration**](docs/graph-database-migration.md) - Architectural decision document for Neo4j migration
 - [API Reference](docs/api-reference.md) - REST API endpoints and examples
 - [Configuration Reference](docs/configuration-reference.md) - All configuration options
 - [Technical Optimizations](docs/technical-optimizations.md) - Detailed performance analysis

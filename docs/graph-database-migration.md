@@ -87,11 +87,11 @@ WHERE p.fetch_status = 'success'
 
 **Why it's slow:**
 SQLite is optimized for:
-- ✅ OLTP (Online Transaction Processing)
-- ✅ Point queries (`WHERE id = ?`)
-- ✅ Small result sets
-- ❌ **NOT** for bulk scans of millions of rows
-- ❌ **NOT** for graph traversal algorithms
+- OLTP (Online Transaction Processing)
+- Point queries (`WHERE id = ?`)
+- Small result sets
+- NOT for bulk scans of millions of rows
+- NOT for graph traversal algorithms
 
 **Graph query characteristics:**
 ```
@@ -212,13 +212,13 @@ This is like **downloading the entire Wikipedia dump to read one article**.
 
 | Requirement | SQLite Design | Our Need | Match |
 |-------------|---------------|----------|-------|
-| Query pattern | Row-oriented (OLTP) | Graph-oriented | ❌ |
-| Access pattern | Sequential scans | Random neighbor lookups | ❌ |
-| Data structure | Tables with foreign keys | Nodes with edges | ❌ |
-| Traversal | Recursive CTEs (slow) | Native graph algorithms | ❌ |
-| Index type | B-tree | Graph-specific (adjacency) | ❌ |
-| Write pattern | Frequent updates | Bulk sync | ✅ |
-| Transaction model | ACID compliance | Eventual consistency OK | ✅ |
+| Query pattern | Row-oriented (OLTP) | Graph-oriented | No |
+| Access pattern | Sequential scans | Random neighbor lookups | No |
+| Data structure | Tables with foreign keys | Nodes with edges | No |
+| Traversal | Recursive CTEs (slow) | Native graph algorithms | No |
+| Index type | B-tree | Graph-specific (adjacency) | No |
+| Write pattern | Frequent updates | Bulk sync | Yes |
+| Transaction model | ACID compliance | Eventual consistency OK | Yes |
 
 **Conclusion:** SQLite is optimized for the crawler workload, NOT the query workload.
 
@@ -277,10 +277,10 @@ RETURN path
 ```
 
 This is:
-- ✅ More readable
-- ✅ Optimized for graph traversal
-- ✅ Uses specialized indexes
-- ✅ Early termination when path found
+- More readable
+- Optimized for graph traversal
+- Uses specialized indexes
+- Early termination when path found
 
 ---
 
@@ -289,10 +289,10 @@ This is:
 ### 4.1 Option 1: Optimize Current Approach
 
 **Attempted optimizations:**
-- ✅ Covering indexes: `idx_links_source_target_covering`
-- ✅ Bulk loading with `AddEdgeUnchecked()`
-- ❌ Gob caching: Failed at scale (7GB file, 30min+ load)
-- ❌ Graph persistence: Fundamental serialization issue
+- Covering indexes: `idx_links_source_target_covering`
+- Bulk loading with `AddEdgeUnchecked()`
+- Gob caching: Failed at scale (7GB file, 30min+ load)
+- Graph persistence: Fundamental serialization issue
 
 **Conclusion:** Diminishing returns. Optimizations help up to ~10M edges, fail beyond.
 
@@ -329,7 +329,7 @@ This is:
 
 **Verdict:** Incremental improvement, doesn't solve root cause
 
-### 4.4 Option 4: Graph Database ⭐ RECOMMENDED
+### 4.4 Option 4: Graph Database (RECOMMENDED)
 
 **Approach:** Use Neo4j for graph queries, keep SQLite for crawler data
 
@@ -349,12 +349,12 @@ This is:
 ```
 
 **Pros:**
-- ✅ Right tool for the job
-- ✅ Scales to billions of edges
-- ✅ 10-100x faster queries
-- ✅ Industry-standard solution
-- ✅ Rich query language (Cypher)
-- ✅ Built-in graph algorithms
+- Right tool for the job
+- Scales to billions of edges
+- 10-100x faster queries
+- Industry-standard solution
+- Rich query language (Cypher)
+- Built-in graph algorithms
 
 **Cons:**
 - Adds operational dependency (Docker)
@@ -408,18 +408,18 @@ This is:
 ### 5.2 Separation of Concerns
 
 **SQLite Responsibilities:**
-- ✅ Crawler state management (pages, fetch_status, timestamps)
-- ✅ Link storage and deduplication
-- ✅ Crawl statistics and metadata
-- ✅ Write-heavy operations (crawler inserts/updates)
-- ✅ Source of truth for all data
+- Crawler state management (pages, fetch_status, timestamps)
+- Link storage and deduplication
+- Crawl statistics and metadata
+- Write-heavy operations (crawler inserts/updates)
+- Source of truth for all data
 
 **Neo4j Responsibilities:**
-- ✅ Graph query operations (pathfinding, connections)
-- ✅ Graph analytics (centrality, clustering, etc.)
-- ✅ Read-heavy traversal operations
-- ✅ Optimized graph algorithms
-- ✅ Derived data (synchronized from SQLite)
+- Graph query operations (pathfinding, connections)
+- Graph analytics (centrality, clustering, etc.)
+- Read-heavy traversal operations
+- Optimized graph algorithms
+- Derived data (synchronized from SQLite)
 
 ### 5.3 Data Synchronization Strategy
 
