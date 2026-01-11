@@ -1,9 +1,5 @@
 # WikiGraph Technical Optimizations Documentation
 
-> **Document Version**: 1.0
-> **Last Updated**: 2026-01-10
-> **Scope**: Complete documentation of all implemented performance optimizations
-
 This document provides a comprehensive technical breakdown of all optimizations implemented in the WikiGraph codebase. Each section covers the original implementation, identified problems, the solution implemented, and the technical rationale behind each decision.
 
 ---

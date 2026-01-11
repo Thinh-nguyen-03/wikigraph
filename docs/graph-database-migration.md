@@ -1,15 +1,8 @@
 # Graph Database Migration: Architectural Decision Document
 
-**Author:** Thinh Nguyen
-**Date:** January 2026
-**Status:** Proposed
-**Problem:** Server startup bottleneck at scale (162M edges)
-
----
-
 ## Executive Summary
 
-At 162 million edges, WikiGraph's current architecture exhibits severe performance degradation during server startup (15+ minutes) and cache operations (30+ minutes or timeout). After analysis, we determined that SQLite, while excellent for OLTP workloads, is fundamentally unsuited for large-scale graph traversal operations. This document proposes migrating to a dual-database architecture using Neo4j for graph queries while retaining SQLite for crawl data persistence.
+At 162 million edges, WikiGraph's current architecture exhibits severe performance degradation during server startup (15+ minutes) and cache operations (30+ minutes or timeout). After analysis, it was determined that SQLite, while excellent for OLTP workloads, is fundamentally unsuited for large-scale graph traversal operations. This document proposes migrating to a dual-database architecture using Neo4j for graph queries while retaining SQLite for crawl data persistence.
 
 **Key Metrics:**
 - Current startup time: 15 minutes (unacceptable for development/deployment)
@@ -198,7 +191,7 @@ The current design requires loading the **entire graph** into memory before serv
 **Reality of usage patterns:**
 - Wikipedia has ~6M pages
 - User queries typically involve <100 pages
-- We load **60,000x more data than needed** per query
+- The system loads **60,000x more data than needed** per query
 
 **Example:**
 ```
@@ -266,7 +259,7 @@ SELECT * FROM path WHERE target_title = ?;
 - Depth 4: ~707,281 rows (29⁴)
 - SQLite must materialize all before filtering
 
-### 3.3 What We Actually Need
+### 3.3 What Is Actually Needed
 
 **Graph database characteristics:**
 1. **Native graph storage:** Nodes and edges as first-class citizens
@@ -660,7 +653,7 @@ volumes:
 
 ## 9. Future Enhancements
 
-Once Neo4j is integrated, we unlock additional capabilities:
+Once Neo4j is integrated, this unlocks additional capabilities:
 
 ### 9.1 Advanced Graph Analytics
 ```cypher
