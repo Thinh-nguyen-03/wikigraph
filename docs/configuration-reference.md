@@ -60,7 +60,16 @@ WikiGraph supports configuration through:
 | `WIKIGRAPH_EMBEDDINGS_TIMEOUT` | `30s` | Embeddings request timeout |
 | `WIKIGRAPH_EMBEDDINGS_BATCH_SIZE` | `32` | Batch size for embedding requests |
 
-### Graph
+### Graph Caching (Performance Critical)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WIKIGRAPH_GRAPH_CACHE_PATH` | `""` | Path to graph cache file (empty = same dir as database) |
+| `WIKIGRAPH_GRAPH_MAX_CACHE_AGE` | `24h` | Maximum cache age before forced rebuild |
+| `WIKIGRAPH_GRAPH_REFRESH_INTERVAL` | `5m` | Interval for checking incremental updates |
+| `WIKIGRAPH_GRAPH_FORCE_REBUILD` | `false` | Force rebuild on startup (ignores cache) |
+
+### Graph Algorithms
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -127,12 +136,12 @@ embeddings:
   timeout: 30s
   batch_size: 32
 
-# Graph algorithm settings
+# Graph caching settings (CRITICAL FOR PERFORMANCE)
 graph:
-  max_path_depth: 6
-  path_timeout: 30s
-  max_crawl_pages: 10000
-  max_crawl_depth: 3
+  cache_path: ""              # Empty = same directory as database
+  max_cache_age: 24h          # Force rebuild after this age
+  refresh_interval: 5m        # Check for DB updates every 5 minutes
+  force_rebuild: false        # Force rebuild on startup
 
 # Logging settings
 logging:
