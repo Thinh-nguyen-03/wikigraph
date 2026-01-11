@@ -16,6 +16,7 @@ type Config struct {
 	Scraper  ScraperConfig
 	Log      LogConfig
 	API      APIConfig
+	Graph    GraphConfig
 }
 
 type DatabaseConfig struct {
@@ -48,6 +49,23 @@ type APIConfig struct {
 	Production      bool
 }
 
+type GraphConfig struct {
+	// CachePath is the path to the graph cache file.
+	// If empty, defaults to "graph.cache" in the same directory as the database.
+	CachePath string
+
+	// MaxCacheAge is the maximum age before cache is considered stale.
+	// Stale caches are still used but trigger a background rebuild.
+	MaxCacheAge time.Duration
+
+	// RefreshInterval is how often to check for incremental updates.
+	// If zero, automatic refresh is disabled.
+	RefreshInterval time.Duration
+
+	// ForceRebuild forces a complete rebuild ignoring any cache.
+	ForceRebuild bool
+}
+
 var defaultConfig = Config{
 	Database: DatabaseConfig{
 		Path: "wikigraph.db",
@@ -74,6 +92,12 @@ var defaultConfig = Config{
 		RateLimit:       100.0,
 		RateBurst:       200,
 		Production:      false,
+	},
+	Graph: GraphConfig{
+		CachePath:       "", // Will default to same directory as database
+		MaxCacheAge:     24 * time.Hour,
+		RefreshInterval: 5 * time.Minute,
+		ForceRebuild:    false,
 	},
 }
 
@@ -121,6 +145,11 @@ func Load() (*Config, error) {
 	cfg.API.RateBurst = v.GetInt("api.rate_burst")
 	cfg.API.Production = v.GetBool("api.production")
 
+	cfg.Graph.CachePath = v.GetString("graph.cache_path")
+	cfg.Graph.MaxCacheAge = v.GetDuration("graph.max_cache_age")
+	cfg.Graph.RefreshInterval = v.GetDuration("graph.refresh_interval")
+	cfg.Graph.ForceRebuild = v.GetBool("graph.force_rebuild")
+
 	return cfg, nil
 }
 
@@ -144,6 +173,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("api.rate_limit", defaultConfig.API.RateLimit)
 	v.SetDefault("api.rate_burst", defaultConfig.API.RateBurst)
 	v.SetDefault("api.production", defaultConfig.API.Production)
+
+	v.SetDefault("graph.cache_path", defaultConfig.Graph.CachePath)
+	v.SetDefault("graph.max_cache_age", defaultConfig.Graph.MaxCacheAge)
+	v.SetDefault("graph.refresh_interval", defaultConfig.Graph.RefreshInterval)
+	v.SetDefault("graph.force_rebuild", defaultConfig.Graph.ForceRebuild)
 }
 
 func userConfigDir() string {
