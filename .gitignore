@@ -9,6 +9,10 @@
 *.db-wal
 *.sqlite
 
+# Graph cache (auto-generated on startup)
+graph.cache
+*.cache
+
 # Dependencies
 vendor/
 
