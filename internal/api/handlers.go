@@ -15,27 +15,54 @@ import (
 // handleHealth returns the health status of the server.
 // GET /health
 func (s *Server) handleHealth(c *gin.Context) {
-	s.mu.RLock()
-	g := s.graph
-	ready := s.graphReady
-	s.mu.RUnlock()
+	progress := s.graphService.GetProgress()
+	nodes, edges := s.graphService.GetGraphStats()
 
-	// Status is "healthy" if graph is ready, "degraded" if empty
-	status := "healthy"
-	if !ready {
-		status = "degraded"
+	// Determine status based on graph state
+	var status string
+	var httpStatus int
+
+	switch progress.State {
+	case StateReady:
+		status = "healthy"
+		httpStatus = http.StatusOK
+	case StateLoading:
+		status = "loading"
+		httpStatus = http.StatusOK // Health check returns 200 even when loading
+	case StateError:
+		status = "error"
+		httpStatus = http.StatusServiceUnavailable
+	default:
+		status = "initializing"
+		httpStatus = http.StatusOK
 	}
 
-	c.JSON(http.StatusOK, HealthResponse{
+	c.JSON(httpStatus, HealthResponse{
 		Status:  status,
 		Version: Version,
 		Graph: GraphStats{
-			Nodes: g.NodeCount(),
-			Edges: g.EdgeCount(),
+			Nodes: nodes,
+			Edges: edges,
 		},
-		GraphReady:        ready,
+		GraphReady:        progress.State == StateReady,
 		EmbeddingsEnabled: false, // Phase 3
 	})
+}
+
+// requireGraphReady is a helper that returns 503 if graph is not ready.
+// Returns the graph if ready, or nil if not ready (response already sent).
+func (s *Server) requireGraphReady(c *gin.Context) bool {
+	if !s.graphService.IsReady() {
+		progress := s.graphService.GetProgress()
+		c.Header("Retry-After", "2")
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error":   "graph_loading",
+			"message": "Graph is still loading, please retry in a few seconds",
+			"stage":   progress.Stage,
+		})
+		return false
+	}
+	return true
 }
 
 // handleGetPage returns a page and its links.
@@ -47,9 +74,12 @@ func (s *Server) handleGetPage(c *gin.Context) {
 		return
 	}
 
-	s.mu.RLock()
-	node := s.graph.GetNode(title)
-	s.mu.RUnlock()
+	if !s.requireGraphReady(c) {
+		return
+	}
+
+	g, _ := s.graphService.GetGraph()
+	node := g.GetNode(title)
 
 	if node == nil {
 		RespondWithNotFound(c, "Page", title)
@@ -104,11 +134,13 @@ func (s *Server) handleFindPath(c *gin.Context) {
 		return
 	}
 
+	if !s.requireGraphReady(c) {
+		return
+	}
+
 	start := time.Now()
 
-	s.mu.RLock()
-	g := s.graph
-	s.mu.RUnlock()
+	g, _ := s.graphService.GetGraph()
 
 	var result struct {
 		Found    bool
@@ -167,9 +199,11 @@ func (s *Server) handleGetConnections(c *gin.Context) {
 		return
 	}
 
-	s.mu.RLock()
-	g := s.graph
-	s.mu.RUnlock()
+	if !s.requireGraphReady(c) {
+		return
+	}
+
+	g, _ := s.graphService.GetGraph()
 
 	node := g.GetNode(title)
 	if node == nil {

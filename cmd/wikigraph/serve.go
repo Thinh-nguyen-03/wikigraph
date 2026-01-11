@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -14,14 +15,14 @@ import (
 	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/fetcher"
-	"github.com/Thinh-nguyen-03/wikigraph/internal/graph"
 )
 
 var (
-	serveHost       string
-	servePort       int
-	serveCORS       bool
-	serveProduction bool
+	serveHost         string
+	servePort         int
+	serveCORS         bool
+	serveProduction   bool
+	serveForceRebuild bool
 )
 
 var serveCmd = &cobra.Command{
@@ -47,6 +48,7 @@ func init() {
 	serveCmd.Flags().IntVarP(&servePort, "port", "p", 0, "port to listen on (default from config)")
 	serveCmd.Flags().BoolVar(&serveCORS, "cors", true, "enable CORS")
 	serveCmd.Flags().BoolVar(&serveProduction, "production", false, "enable production mode")
+	serveCmd.Flags().BoolVar(&serveForceRebuild, "rebuild-cache", false, "force rebuild graph cache from database")
 }
 
 func runServe(cmd *cobra.Command, args []string) error {
@@ -82,17 +84,26 @@ func runServe(cmd *cobra.Command, args []string) error {
 		BaseURL:        cfg.Scraper.WikipediaAPIURL,
 	})
 
-	// Load graph into memory
-	slog.Info("loading graph into memory...")
-	loader := graph.NewLoader(c)
-	g, err := loader.Load()
-	if err != nil {
-		return fmt.Errorf("loading graph: %w", err)
+	// Determine graph cache path
+	cachePath := cfg.Graph.CachePath
+	if cachePath == "" {
+		// Default to same directory as database
+		dbDir := filepath.Dir(cfg.Database.Path)
+		cachePath = filepath.Join(dbDir, "graph.cache")
 	}
-	slog.Info("graph loaded",
-		"nodes", g.NodeCount(),
-		"edges", g.EdgeCount(),
-	)
+
+	// Create GraphService with background loading
+	graphServiceCfg := api.GraphServiceConfig{
+		CachePath:       cachePath,
+		MaxCacheAge:     cfg.Graph.MaxCacheAge,
+		RefreshInterval: cfg.Graph.RefreshInterval,
+		ForceRebuild:    serveForceRebuild || cfg.Graph.ForceRebuild,
+	}
+	graphService := api.NewGraphService(c, graphServiceCfg)
+
+	// Start background graph loading (returns immediately)
+	graphService.Start(ctx)
+	defer graphService.Stop()
 
 	// Build server config
 	serverCfg := api.Config{
@@ -122,12 +133,14 @@ func runServe(cmd *cobra.Command, args []string) error {
 		serverCfg.Production = serveProduction
 	}
 
-	// Create and start server
-	server := api.New(g, c, f, serverCfg)
+	// Create and start server with GraphService
+	server := api.NewWithGraphService(graphService, c, f, serverCfg)
 
 	fmt.Printf("Starting WikiGraph API server on http://%s:%d\n", serverCfg.Host, serverCfg.Port)
+	fmt.Println("\nGraph loading in background - server is immediately available")
+	fmt.Println("Note: Path queries will return 503 until graph is ready")
 	fmt.Println("\nAvailable endpoints:")
-	fmt.Println("  GET  /health                        - Health check")
+	fmt.Println("  GET  /health                        - Health check (shows graph status)")
 	fmt.Println("  GET  /api/v1/page/:title            - Get page links")
 	fmt.Println("  GET  /api/v1/path?from=X&to=Y       - Find shortest path")
 	fmt.Println("  GET  /api/v1/connections/:title     - Get N-hop neighborhood")

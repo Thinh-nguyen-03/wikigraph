@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
 
 	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/fetcher"
@@ -18,27 +17,43 @@ const Version = "1.0.0"
 
 // Server is the HTTP API server for WikiGraph.
 type Server struct {
-	router     *gin.Engine
-	httpServer *http.Server
-	graph      *graph.Graph
-	cache      *cache.Cache
-	fetcher    *fetcher.Fetcher
-	config     Config
-	mu         sync.RWMutex // protects graph and graphReady
-	graphReady bool         // true if graph has been loaded with data
+	router       *gin.Engine
+	httpServer   *http.Server
+	graphService *GraphService
+	cache        *cache.Cache
+	fetcher      *fetcher.Fetcher
+	config       Config
 }
 
-// New creates a new API server with the given dependencies.
-func New(g *graph.Graph, c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Server {
+// NewWithGraphService creates a new API server with GraphService for background loading.
+// This is the preferred constructor for production use.
+func NewWithGraphService(gs *GraphService, c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Server {
 	s := &Server{
-		graph:      g,
-		cache:      c,
-		fetcher:    f,
-		config:     cfg,
-		graphReady: g != nil && g.NodeCount() > 0,
+		graphService: gs,
+		cache:        c,
+		fetcher:      f,
+		config:       cfg,
 	}
 	s.setupRouter()
 	return s
+}
+
+// New creates a new API server with a pre-loaded graph.
+// This constructor is kept for backward compatibility and testing.
+// For production use, prefer NewWithGraphService for background loading.
+func New(g *graph.Graph, c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Server {
+	// Create a simple GraphService wrapper around the provided graph
+	gs := &GraphService{
+		g:     g,
+		cache: c,
+		state: StateReady,
+		progress: LoadProgress{
+			State: StateReady,
+			Stage: "complete",
+		},
+	}
+
+	return NewWithGraphService(gs, c, f, cfg)
 }
 
 // Start starts the HTTP server and blocks until the context is cancelled
@@ -96,41 +111,24 @@ func (s *Server) Router() *gin.Engine {
 	return s.router
 }
 
-// Graph returns the graph with read lock for safe concurrent access.
+// Graph returns the graph if ready, or nil if still loading.
 func (s *Server) Graph() *graph.Graph {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.graph
+	g, _ := s.graphService.GetGraph()
+	return g
 }
 
-// ReloadGraph reloads the graph from the cache.
+// GraphService returns the underlying GraphService.
+func (s *Server) GraphService() *GraphService {
+	return s.graphService
+}
+
+// ReloadGraph triggers a complete graph rebuild from the database.
 // This should be called after background crawl jobs complete.
 func (s *Server) ReloadGraph() error {
-	slog.Info("reloading graph...")
-
-	loader := graph.NewLoader(s.cache)
-	newGraph, err := loader.Load()
-	if err != nil {
-		return fmt.Errorf("reloading graph: %w", err)
-	}
-
-	s.mu.Lock()
-	s.graph = newGraph
-	s.graphReady = newGraph.NodeCount() > 0
-	s.mu.Unlock()
-
-	slog.Info("graph reloaded",
-		"nodes", newGraph.NodeCount(),
-		"edges", newGraph.EdgeCount(),
-		"ready", s.graphReady,
-	)
-
-	return nil
+	return s.graphService.ForceReload(context.Background())
 }
 
 // IsGraphReady returns true if the graph has been loaded with data.
 func (s *Server) IsGraphReady() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.graphReady
+	return s.graphService.IsReady()
 }
