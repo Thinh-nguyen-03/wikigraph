@@ -17,6 +17,7 @@ type Config struct {
 	Log      LogConfig
 	API      APIConfig
 	Graph    GraphConfig
+	Neo4j    Neo4jConfig
 }
 
 type DatabaseConfig struct {
@@ -66,6 +67,33 @@ type GraphConfig struct {
 	ForceRebuild bool
 }
 
+type Neo4jConfig struct {
+	// URI is the Neo4j connection URI (e.g., bolt://localhost:7687)
+	URI string
+
+	// Username for Neo4j authentication
+	Username string
+
+	// Password for Neo4j authentication
+	Password string
+
+	// Enabled determines whether to use Neo4j for graph queries
+	Enabled bool
+
+	// MaxConnectionPoolSize is the maximum number of connections in the pool
+	MaxConnectionPoolSize int
+
+	// ConnectionAcquisitionTimeout is the max time to wait for a connection
+	ConnectionAcquisitionTimeout time.Duration
+
+	// SyncInterval is how often to sync new data from SQLite to Neo4j
+	// If zero, automatic sync is disabled
+	SyncInterval time.Duration
+
+	// SyncBatchSize is the number of nodes/edges to sync in a single batch
+	SyncBatchSize int
+}
+
 var defaultConfig = Config{
 	Database: DatabaseConfig{
 		Path: "wikigraph.db",
@@ -98,6 +126,16 @@ var defaultConfig = Config{
 		MaxCacheAge:     24 * time.Hour,
 		RefreshInterval: 5 * time.Minute,
 		ForceRebuild:    false,
+	},
+	Neo4j: Neo4jConfig{
+		URI:                          "bolt://localhost:7687",
+		Username:                     "neo4j",
+		Password:                     "wikigraph",
+		Enabled:                      false, // Disabled by default for backward compatibility
+		MaxConnectionPoolSize:        50,
+		ConnectionAcquisitionTimeout: 60 * time.Second,
+		SyncInterval:                 5 * time.Minute,
+		SyncBatchSize:                10000,
 	},
 }
 
@@ -150,6 +188,15 @@ func Load() (*Config, error) {
 	cfg.Graph.RefreshInterval = v.GetDuration("graph.refresh_interval")
 	cfg.Graph.ForceRebuild = v.GetBool("graph.force_rebuild")
 
+	cfg.Neo4j.URI = v.GetString("neo4j.uri")
+	cfg.Neo4j.Username = v.GetString("neo4j.username")
+	cfg.Neo4j.Password = v.GetString("neo4j.password")
+	cfg.Neo4j.Enabled = v.GetBool("neo4j.enabled")
+	cfg.Neo4j.MaxConnectionPoolSize = v.GetInt("neo4j.max_connection_pool_size")
+	cfg.Neo4j.ConnectionAcquisitionTimeout = v.GetDuration("neo4j.connection_acquisition_timeout")
+	cfg.Neo4j.SyncInterval = v.GetDuration("neo4j.sync_interval")
+	cfg.Neo4j.SyncBatchSize = v.GetInt("neo4j.sync_batch_size")
+
 	return cfg, nil
 }
 
@@ -178,6 +225,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("graph.max_cache_age", defaultConfig.Graph.MaxCacheAge)
 	v.SetDefault("graph.refresh_interval", defaultConfig.Graph.RefreshInterval)
 	v.SetDefault("graph.force_rebuild", defaultConfig.Graph.ForceRebuild)
+
+	v.SetDefault("neo4j.uri", defaultConfig.Neo4j.URI)
+	v.SetDefault("neo4j.username", defaultConfig.Neo4j.Username)
+	v.SetDefault("neo4j.password", defaultConfig.Neo4j.Password)
+	v.SetDefault("neo4j.enabled", defaultConfig.Neo4j.Enabled)
+	v.SetDefault("neo4j.max_connection_pool_size", defaultConfig.Neo4j.MaxConnectionPoolSize)
+	v.SetDefault("neo4j.connection_acquisition_timeout", defaultConfig.Neo4j.ConnectionAcquisitionTimeout)
+	v.SetDefault("neo4j.sync_interval", defaultConfig.Neo4j.SyncInterval)
+	v.SetDefault("neo4j.sync_batch_size", defaultConfig.Neo4j.SyncBatchSize)
 }
 
 func userConfigDir() string {

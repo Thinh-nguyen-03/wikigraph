@@ -25,3 +25,22 @@ scraper:
 
 log:
   level: "info"  # Options: debug, info, warn, error
+
+neo4j:
+  # Enable Neo4j for graph queries (set to true to use Neo4j instead of in-memory graph)
+  enabled: false
+
+  # Neo4j connection URI (bolt protocol)
+  uri: "bolt://localhost:7687"
+
+  # Authentication credentials
+  username: "neo4j"
+  password: "wikigraph"
+
+  # Connection pool settings
+  max_connection_pool_size: 50
+  connection_acquisition_timeout: 60s
+
+  # Sync settings (how often to sync new data from SQLite to Neo4j)
+  sync_interval: 5m
+  sync_batch_size: 10000
