@@ -56,6 +56,47 @@ func (g *Graph) AddEdge(source, target string) {
 	g.edges++
 }
 
+// AddEdgeUnchecked adds an edge without duplicate checking.
+// Use only for bulk loading from trusted sources where uniqueness is guaranteed.
+func (g *Graph) AddEdgeUnchecked(source, target string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	src := g.addNode(source)
+	tgt := g.addNode(target)
+
+	src.OutLinks = append(src.OutLinks, tgt)
+	tgt.InLinks = append(tgt.InLinks, src)
+	g.edges++
+}
+
+// RemoveOutLinks removes all outgoing edges from a node.
+// Used for incremental updates when a page's links have changed.
+func (g *Graph) RemoveOutLinks(title string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	node := g.nodes[title]
+	if node == nil {
+		return
+	}
+
+	// Remove this node from each target's InLinks
+	for _, target := range node.OutLinks {
+		newInLinks := make([]*Node, 0, len(target.InLinks)-1)
+		for _, inLink := range target.InLinks {
+			if inLink != node {
+				newInLinks = append(newInLinks, inLink)
+			}
+		}
+		target.InLinks = newInLinks
+		g.edges--
+	}
+
+	// Clear outlinks
+	node.OutLinks = nil
+}
+
 func (g *Graph) GetNode(title string) *Node {
 	g.mu.RLock()
 	defer g.mu.RUnlock()

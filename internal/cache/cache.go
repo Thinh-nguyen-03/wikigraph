@@ -403,3 +403,72 @@ func (c *Cache) GetGraphData() (*GraphData, error) {
 
 	return data, nil
 }
+
+// UpdatedPage represents a page that has been modified in the database.
+type UpdatedPage struct {
+	ID          int64
+	Title       string
+	FetchStatus string
+	UpdatedAt   time.Time
+}
+
+// GetUpdatedPages returns pages that have been modified since the given time.
+// Used for incremental graph updates.
+func (c *Cache) GetUpdatedPages(since time.Time) ([]UpdatedPage, error) {
+	rows, err := c.db.Query(`
+		SELECT id, title, fetch_status, updated_at
+		FROM pages
+		WHERE updated_at > ?
+		ORDER BY updated_at ASC
+	`, since.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("querying updated pages: %w", err)
+	}
+	defer rows.Close()
+
+	var pages []UpdatedPage
+	for rows.Next() {
+		var p UpdatedPage
+		var updatedAt string
+		if err := rows.Scan(&p.ID, &p.Title, &p.FetchStatus, &updatedAt); err != nil {
+			return nil, fmt.Errorf("scanning updated page: %w", err)
+		}
+		p.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		pages = append(pages, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating updated pages: %w", err)
+	}
+
+	return pages, nil
+}
+
+// GetPageLinks returns all outgoing links for a page by ID.
+// Used for incremental graph updates.
+func (c *Cache) GetPageLinks(pageID int64) ([]string, error) {
+	rows, err := c.db.Query(`
+		SELECT target_title
+		FROM links
+		WHERE source_id = ?
+	`, pageID)
+	if err != nil {
+		return nil, fmt.Errorf("querying page links: %w", err)
+	}
+	defer rows.Close()
+
+	var links []string
+	for rows.Next() {
+		var target string
+		if err := rows.Scan(&target); err != nil {
+			return nil, fmt.Errorf("scanning link: %w", err)
+		}
+		links = append(links, target)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating links: %w", err)
+	}
+
+	return links, nil
+}
