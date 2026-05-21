@@ -11,11 +11,20 @@ type ErrorResponse struct {
 
 // HealthResponse is returned by the health check endpoint.
 type HealthResponse struct {
-	Status            string     `json:"status"`
-	Version           string     `json:"version"`
-	Graph             GraphStats `json:"graph"`
-	GraphReady        bool       `json:"graph_ready"`
-	EmbeddingsEnabled bool       `json:"embeddings_enabled"`
+	Status     string       `json:"status"`
+	Version    string       `json:"version"`
+	Graph      GraphStats   `json:"graph"`
+	GraphReady bool         `json:"graph_ready"`
+	Neo4j      *Neo4jStatus `json:"neo4j,omitempty"`
+}
+
+// Neo4jStatus contains Neo4j connection status for health response.
+type Neo4jStatus struct {
+	Enabled   bool   `json:"enabled"`
+	Connected bool   `json:"connected"`
+	Nodes     int    `json:"nodes,omitempty"`
+	Edges     int    `json:"edges,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // GraphStats contains graph statistics for health response.
@@ -32,7 +41,6 @@ type PageResponse struct {
 	InLinks     []string  `json:"in_links,omitempty"`
 	InLinkCount int       `json:"in_link_count"`
 	FetchedAt   time.Time `json:"fetched_at,omitempty"`
-	Cached      bool      `json:"cached"`
 }
 
 // PathResponse is returned by the path endpoint.
@@ -82,6 +90,16 @@ type CrawlResponse struct {
 	JobID   string `json:"job_id"`
 	Status  string `json:"status"`
 	Message string `json:"message"`
+}
+
+// CrawlJobStatus is returned by the job status endpoint.
+type CrawlJobStatus struct {
+	JobID       string     `json:"job_id"`
+	Status      string     `json:"status"` // started | crawling | syncing | done | failed
+	Title       string     `json:"title"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	Error       string     `json:"error,omitempty"`
 }
 
 // SimilarResponse is returned by the similar endpoint (Phase 3).

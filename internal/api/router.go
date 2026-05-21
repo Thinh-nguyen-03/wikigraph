@@ -53,6 +53,7 @@ func (s *Server) setupRouter() {
 
 		// Crawl endpoints
 		v1.POST("/crawl", s.handleCrawl)
+		v1.GET("/crawl/:id", s.handleGetCrawlJob)
 	}
 
 	s.router = router
