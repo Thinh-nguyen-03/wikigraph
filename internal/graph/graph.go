@@ -1,12 +1,19 @@
 // Package graph provides an in-memory directed graph for Wikipedia pages.
 package graph
 
-import "sync"
+import (
+	"context"
+	"sync"
+)
 
 type Node struct {
 	Title    string
 	OutLinks []*Node
 	InLinks  []*Node
+	// out is an O(1) duplicate-detection set for AddEdge.
+	// It is unexported so gob ignores it; AddEdge initialises it lazily
+	// from OutLinks the first time it is called on a gob-loaded node.
+	out map[*Node]bool
 }
 
 type Graph struct {
@@ -33,7 +40,7 @@ func (g *Graph) addNode(title string) *Node {
 	if n := g.nodes[title]; n != nil {
 		return n
 	}
-	n := &Node{Title: title}
+	n := &Node{Title: title, out: make(map[*Node]bool)}
 	g.nodes[title] = n
 	return n
 }
@@ -45,14 +52,22 @@ func (g *Graph) AddEdge(source, target string) {
 	src := g.addNode(source)
 	tgt := g.addNode(target)
 
-	for _, existing := range src.OutLinks {
-		if existing == tgt {
-			return
+	// Lazily rebuild the out-set when loading from a gob cache where the
+	// unexported field is not serialised.
+	if src.out == nil {
+		src.out = make(map[*Node]bool, len(src.OutLinks))
+		for _, n := range src.OutLinks {
+			src.out[n] = true
 		}
+	}
+
+	if src.out[tgt] {
+		return
 	}
 
 	src.OutLinks = append(src.OutLinks, tgt)
 	tgt.InLinks = append(tgt.InLinks, src)
+	src.out[tgt] = true
 	g.edges++
 }
 
@@ -67,6 +82,9 @@ func (g *Graph) AddEdgeUnchecked(source, target string) {
 
 	src.OutLinks = append(src.OutLinks, tgt)
 	tgt.InLinks = append(tgt.InLinks, src)
+	if src.out != nil {
+		src.out[tgt] = true
+	}
 	g.edges++
 }
 
@@ -81,7 +99,6 @@ func (g *Graph) RemoveOutLinks(title string) {
 		return
 	}
 
-	// Remove this node from each target's InLinks
 	for _, target := range node.OutLinks {
 		newInLinks := make([]*Node, 0, len(target.InLinks)-1)
 		for _, inLink := range target.InLinks {
@@ -93,8 +110,10 @@ func (g *Graph) RemoveOutLinks(title string) {
 		g.edges--
 	}
 
-	// Clear outlinks
 	node.OutLinks = nil
+	if node.out != nil {
+		clear(node.out)
+	}
 }
 
 func (g *Graph) GetNode(title string) *Node {
@@ -134,7 +153,8 @@ type SubgraphEdge struct {
 }
 
 // GetNeighborhood returns the N-hop neighborhood around a node using BFS.
-func (g *Graph) GetNeighborhood(title string, maxDepth, maxNodes int) *Subgraph {
+// Returns a partial result if ctx is cancelled mid-traversal.
+func (g *Graph) GetNeighborhood(ctx context.Context, title string, maxDepth, maxNodes int) *Subgraph {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -148,35 +168,37 @@ func (g *Graph) GetNeighborhood(title string, maxDepth, maxNodes int) *Subgraph 
 		Edges: make([]SubgraphEdge, 0),
 	}
 
-	// Track visited nodes with their hop distance
-	visited := make(map[*Node]int)
-	visited[center] = 0
-	result.Nodes = append(result.Nodes, SubgraphNode{Title: title, Hops: 0})
-
-	// BFS queue: pairs of (node, depth)
 	type queueItem struct {
 		node  *Node
 		depth int
 	}
-	queue := []queueItem{{center, 0}}
 
-	for len(queue) > 0 && len(result.Nodes) < maxNodes {
-		item := queue[0]
-		queue = queue[1:]
+	// Use a head index instead of queue[1:] to avoid O(n) slice shifts.
+	queue := []queueItem{{center, 0}}
+	head := 0
+
+	visited := make(map[*Node]int)
+	visited[center] = 0
+	result.Nodes = append(result.Nodes, SubgraphNode{Title: title, Hops: 0})
+
+	for head < len(queue) && len(result.Nodes) < maxNodes {
+		if ctx.Err() != nil {
+			return result
+		}
+
+		item := queue[head]
+		head++
 
 		if item.depth >= maxDepth {
 			continue
 		}
 
-		// Process outgoing links
 		for _, neighbor := range item.node.OutLinks {
-			// Add edge (even if neighbor was visited, we want all edges)
 			result.Edges = append(result.Edges, SubgraphEdge{
 				Source: item.node.Title,
 				Target: neighbor.Title,
 			})
 
-			// Add node if not visited
 			if _, seen := visited[neighbor]; !seen {
 				if len(result.Nodes) >= maxNodes {
 					break
