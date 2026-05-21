@@ -45,7 +45,6 @@ WikiGraph uses SQLite for persistent storage of fetched Wikipedia pages and thei
 │ id            INTEGER PK                │
 │ source_id     INTEGER FK → pages.id     │
 │ target_title  TEXT NOT NULL             │
-│ anchor_text   TEXT                      │
 │ created_at    TEXT NOT NULL             │
 └─────────────────────────────────────────┘
 ```
@@ -122,14 +121,14 @@ Stores directed edges from source pages to target pages.
 | `id` | INTEGER | PRIMARY KEY | Auto-incrementing unique identifier |
 | `source_id` | INTEGER | NOT NULL, FK → pages.id | Source page (the page containing the link) |
 | `target_title` | TEXT | NOT NULL, max 512 chars | Target page title (may not exist in pages table) |
-| `anchor_text` | TEXT | max 1024 chars | The clickable text of the link |
 | `created_at` | TEXT | NOT NULL | ISO8601 timestamp when record was created |
+
+`anchor_text` was removed in migration 4 — it was stored but never queried. At 160M links this saved ~15 GB of disk space.
 
 **Constraints:**
 - `UNIQUE(source_id, target_title)` prevents duplicate links
 - `ON DELETE CASCADE` removes links when source page is deleted
 - `CHECK(length(target_title) <= 512)` prevents unbounded titles
-- `CHECK(length(anchor_text) <= 1024)` prevents unbounded anchor text
 
 **Design Decision - Why `target_title` instead of `target_id`?**
 
@@ -162,10 +161,10 @@ CREATE INDEX idx_links_source_id ON links(source_id);
 -- Find all pages linking to a target (backlinks, reverse lookup)
 CREATE INDEX idx_links_target_title ON links(target_title);
 
--- Covering index for "find unfetched targets" query (Phase 2 crawler)
--- This is a partial index that only includes links to pages not yet in the pages table
-CREATE INDEX idx_links_target_for_crawl ON links(target_title)
-    WHERE target_title NOT IN (SELECT title FROM pages);
+-- Covering index used by GetGraphData (INDEXED BY hint in cache.go)
+-- Eliminates table lookups when bulk-loading the graph: source_id + target_title
+-- are both in the index so the query is index-only.
+CREATE INDEX idx_links_source_target_covering ON links(source_id, target_title);
 ```
 
 **Index Design Notes:**
@@ -193,6 +192,18 @@ migrations/
 ├── 001_initial_schema.sql
 └── ...
 ```
+
+### Migration History
+
+| Version | File | Summary |
+|---------|------|---------|
+| 1 | `001_initial_schema.sql` | Base tables (`pages`, `links`, `schema_migrations`) and core indexes |
+| 2 | `002_optimization_indexes.sql` | Additional query performance indexes |
+| 3 | `003_graph_optimization.sql` | Covering index `idx_links_source_target_covering` for graph bulk load |
+| 4 | `004_remove_anchor_text.sql` | Drop `anchor_text` column from `links` (unused, saves ~15 GB at scale) |
+| 5 | `005_restore_covering_index.sql` | Restore covering index lost when migration 4 recreated the links table |
+
+---
 
 ### Migration 001: Initial Schema
 
@@ -312,10 +323,13 @@ func Migrate(db *sql.DB) error {
     migrations := []struct {
         version int
         file    string
+        name    string
     }{
-        {1, "001_initial_schema.sql"},
-        // Add future migrations here:
-        // {2, "002_add_embeddings.sql"},
+        {1, "migrations/001_initial_schema.sql", "initial_schema"},
+        {2, "migrations/002_optimization_indexes.sql", "optimization_indexes"},
+        {3, "migrations/003_graph_optimization.sql", "graph_optimization"},
+        {4, "migrations/004_remove_anchor_text.sql", "remove_anchor_text"},
+        {5, "migrations/005_restore_covering_index.sql", "restore_covering_index"},
     }
 
     for _, m := range migrations {

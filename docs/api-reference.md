@@ -1,534 +1,352 @@
-# WikiGraph REST API Reference
+# WikiGraph API Reference
 
-## Overview
+**Base URL:** `http://localhost:8080`  
+**Content-Type:** `application/json`
 
-The WikiGraph API provides programmatic access to Wikipedia knowledge graph functionality including page fetching, pathfinding, and semantic similarity search.
+All endpoints under `/api/v1/` require the graph to be ready. If the graph is still loading the server returns `503 Service Unavailable` with a `Retry-After: 30` header.
 
-**Base URL**: `http://localhost:8080`
-
-**Content-Type**: `application/json`
-
----
-
-## Authentication
-
-Currently, the API does not require authentication. This may change in future versions.
+Title parameters accept both spaces and underscores — `Albert_Einstein` and `Albert Einstein` resolve to the same page.
 
 ---
 
-## Endpoints
+## GET /health
 
-### Health Check
+Health check. Always returns `200` even while the graph is loading.
 
-Check if the API is running.
-
-```
-GET /health
-```
-
-#### Response
+**Response**
 
 ```json
 {
-  "status": "ok",
-  "version": "0.1.0",
-  "uptime": "2h34m12s"
+  "status": "healthy",
+  "version": "1.0.0",
+  "graph": {
+    "nodes": 5600000,
+    "edges": 162000000
+  },
+  "graph_ready": true,
+  "neo4j": {
+    "enabled": true,
+    "connected": true,
+    "nodes": 5600000,
+    "edges": 162000000
+  }
 }
 ```
 
+`neo4j` is omitted when `neo4j.enabled = false` in config. `status` is `"degraded"` when the graph is not yet ready.
+
 ---
 
-### Fetch Page
+## GET /api/v1/page/:title
 
-Fetch a Wikipedia page and return its links.
+Returns a page and its outgoing and incoming links.
 
-```
-GET /page/:title
-```
+**Path parameters**
 
-#### Parameters
+| Parameter | Description |
+|-----------|-------------|
+| `title` | Wikipedia page title (spaces or underscores) |
 
-| Parameter | Type | Location | Required | Description |
-|-----------|------|----------|----------|-------------|
-| `title` | string | path | yes | Wikipedia page title |
-| `max_links` | int | query | no | Maximum links to return (default: all) |
-| `bypass_cache` | bool | query | no | Force fresh fetch (default: false) |
-
-#### Example Request
-
-```bash
-curl "http://localhost:8080/page/Albert_Einstein?max_links=10"
-```
-
-#### Response
+**Response `200`**
 
 ```json
 {
   "title": "Albert Einstein",
+  "links": ["Physics", "Germany", "Nobel Prize in Physics"],
   "link_count": 347,
-  "links": [
-    {"target_title": "Physics", "anchor_text": "physics"},
-    {"target_title": "Germany", "anchor_text": "Germany"},
-    {"target_title": "Theoretical physics", "anchor_text": "theoretical physicist"},
-    ...
-  ],
-  "fetched_at": "2024-01-15T10:30:00Z",
-  "from_cache": true,
-  "fetch_duration_ms": 0
+  "in_links": ["Physicist", "German-American"],
+  "in_link_count": 89
 }
 ```
 
-#### Errors
+`in_links` and `in_link_count` are populated from the in-memory graph. When the Neo4j backend is active, up to 1000 outgoing and 1000 incoming links are returned.
 
-| Code | Description |
-|------|-------------|
-| 400 | Invalid title |
-| 404 | Page not found |
-| 429 | Rate limited |
-| 500 | Internal error |
+**Errors**
+
+| Status | `error` field | Condition |
+|--------|---------------|-----------|
+| 404 | `not_found` | Page does not exist in the graph |
+| 503 | `graph_loading` | Graph not yet ready (in-memory backend only) |
 
 ---
 
-### Find Path
+## GET /api/v1/path
 
-Find the shortest path between two Wikipedia pages.
+Find the shortest path between two pages.
 
-```
-GET /path
-```
+**Query parameters**
 
-#### Parameters
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `from` | string | required | Source page title |
+| `to` | string | required | Target page title |
+| `algorithm` | string | `bfs` | `bfs` or `bidirectional` |
+| `backend` | string | `auto` | `auto`, `neo4j`, or `memory` |
+| `max_depth` | int | `6` | Maximum path length (1–20) |
 
-| Parameter | Type | Location | Required | Description |
-|-----------|------|----------|----------|-------------|
-| `from` | string | query | yes | Starting page title |
-| `to` | string | query | yes | Target page title |
-| `max_depth` | int | query | no | Maximum path length (default: 6) |
-| `timeout` | int | query | no | Timeout in seconds (default: 30) |
+**Backend selection**
 
-#### Example Request
+- `auto` — uses Neo4j if connected, otherwise in-memory graph
+- `neo4j` — forces Neo4j; returns `503` if unavailable
+- `memory` — forces in-memory graph; returns `503` if graph not ready
 
-```bash
-curl "http://localhost:8080/path?from=Albert_Einstein&to=Barack_Obama"
-```
-
-#### Response (Success)
+**Response `200` — path found**
 
 ```json
 {
   "found": true,
-  "path": [
-    "Albert Einstein",
-    "Princeton University",
-    "United States",
-    "Barack Obama"
-  ],
+  "from": "Albert Einstein",
+  "to": "Barack Obama",
+  "path": ["Albert Einstein", "Princeton University", "United States", "Barack Obama"],
   "hops": 3,
-  "pages_visited": 1247,
-  "computed_in_ms": 245
+  "explored": 1247,
+  "algorithm": "memory-bfs",
+  "duration_ms": 12
 }
 ```
 
-#### Response (Not Found)
+**Response `200` — no path**
 
 ```json
 {
   "found": false,
-  "path": null,
+  "from": "Page A",
+  "to": "Page B",
   "hops": 0,
-  "pages_visited": 5000,
-  "computed_in_ms": 30000,
-  "reason": "max_depth_exceeded"
+  "explored": 5000,
+  "algorithm": "memory-bfs",
+  "duration_ms": 340
 }
 ```
 
-#### Errors
+`algorithm` reflects the backend and algorithm used: `memory-bfs`, `memory-bidirectional`, or `neo4j-shortestpath`.
 
-| Code | Description |
-|------|-------------|
-| 400 | Missing or invalid parameters |
-| 404 | One or both pages not found |
-| 408 | Request timeout |
-| 500 | Internal error |
+**Errors**
+
+| Status | `error` field | Condition |
+|--------|---------------|-----------|
+| 400 | `missing_parameter` | `from` or `to` not provided |
+| 400 | `invalid_parameter` | Unknown `algorithm` or `backend`; `max_depth` out of range |
+| 503 | `neo4j_unavailable` | `backend=neo4j` but Neo4j not connected |
+| 503 | `graph_loading` | `backend=memory` and graph not ready |
 
 ---
 
-### Get Connections
+## GET /api/v1/connections/:title
 
-Get the N-hop neighborhood of a page.
+Return the N-hop neighborhood subgraph centered on a page. Uses BFS from the in-memory graph.
 
-```
-GET /connections/:title
-```
+**Path parameters**
 
-#### Parameters
+| Parameter | Description |
+|-----------|-------------|
+| `title` | Center page title |
 
-| Parameter | Type | Location | Required | Description |
-|-----------|------|----------|----------|-------------|
-| `title` | string | path | yes | Wikipedia page title |
-| `depth` | int | query | no | Neighborhood depth (default: 1, max: 3) |
-| `max_nodes` | int | query | no | Maximum nodes to return (default: 100) |
-| `direction` | string | query | no | `outgoing`, `incoming`, or `both` (default: `outgoing`) |
+**Query parameters**
 
-#### Example Request
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `depth` | int | `1` | Hop depth (1–5) |
+| `max_nodes` | int | `100` | Node cap (1–10000) |
 
-```bash
-curl "http://localhost:8080/connections/Albert_Einstein?depth=1&max_nodes=20"
-```
-
-#### Response
+**Response `200`**
 
 ```json
 {
-  "center": "Albert Einstein",
-  "depth": 1,
+  "center": "Physics",
+  "depth": 2,
   "nodes": [
-    {"title": "Albert Einstein", "depth": 0},
-    {"title": "Physics", "depth": 1},
-    {"title": "Germany", "depth": 1},
-    {"title": "Nobel Prize in Physics", "depth": 1},
-    ...
+    {"id": "Physics", "title": "Physics", "hops": 0},
+    {"id": "Mathematics", "title": "Mathematics", "hops": 1}
   ],
   "edges": [
-    {"source": "Albert Einstein", "target": "Physics"},
-    {"source": "Albert Einstein", "target": "Germany"},
-    ...
+    {"source": "Physics", "target": "Mathematics"}
   ],
-  "node_count": 20,
-  "edge_count": 19
+  "node_count": 48,
+  "edge_count": 51
 }
 ```
+
+**Errors**
+
+| Status | `error` field | Condition |
+|--------|---------------|-----------|
+| 400 | `invalid_parameter` | `depth` or `max_nodes` out of range |
+| 404 | `not_found` | Page not in graph |
+| 503 | `graph_loading` | Graph not ready |
 
 ---
 
-### Find Similar Pages
+## POST /api/v1/crawl
 
-Find semantically similar pages using embeddings.
+Start a background crawl job. Returns immediately with a job ID.
 
-```
-GET /similar/:title
-```
-
-#### Parameters
-
-| Parameter | Type | Location | Required | Description |
-|-----------|------|----------|----------|-------------|
-| `title` | string | path | yes | Wikipedia page title |
-| `limit` | int | query | no | Number of results (default: 10, max: 50) |
-| `min_score` | float | query | no | Minimum similarity score (default: 0.5) |
-
-#### Example Request
-
-```bash
-curl "http://localhost:8080/similar/World_War_II?limit=5"
-```
-
-#### Response
+**Request body**
 
 ```json
 {
-  "query": "World War II",
-  "results": [
-    {"title": "World War I", "score": 0.89},
-    {"title": "Nazi Germany", "score": 0.84},
-    {"title": "Allied Powers", "score": 0.81},
-    {"title": "Adolf Hitler", "score": 0.78},
-    {"title": "Holocaust", "score": 0.75}
-  ],
-  "computed_in_ms": 23
+  "title": "Mathematics",
+  "depth": 2,
+  "max_pages": 1000
 }
 ```
 
-#### Errors
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `title` | string | yes | Non-empty Wikipedia page title |
+| `depth` | int | no | 1–50 (default: scraper config) |
+| `max_pages` | int | no | 1–500000 (default: scraper config) |
 
-| Code | Description |
-|------|-------------|
-| 400 | Invalid parameters |
-| 404 | Page not found or no embedding |
-| 503 | Embeddings service unavailable |
-
----
-
-### Start Crawl
-
-Start a background crawl job.
-
-```
-POST /crawl
-```
-
-#### Request Body
+**Response `202`**
 
 ```json
 {
-  "start_page": "Albert Einstein",
-  "max_pages": 500,
-  "max_depth": 2,
-  "respect_rate_limit": true
-}
-```
-
-#### Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `start_page` | string | yes | Starting Wikipedia page |
-| `max_pages` | int | no | Maximum pages to crawl (default: 100) |
-| `max_depth` | int | no | Maximum crawl depth (default: 2) |
-| `respect_rate_limit` | bool | no | Respect Wikipedia rate limits (default: true) |
-
-#### Response
-
-```json
-{
-  "job_id": "crawl_abc123",
+  "job_id": "crawl_a1b2c3d4",
   "status": "started",
-  "start_page": "Albert Einstein",
-  "max_pages": 500,
-  "estimated_duration": "8m20s"
+  "message": "Crawl job started for 'Mathematics'"
 }
 ```
+
+**Errors**
+
+| Status | `error` field | Condition |
+|--------|---------------|-----------|
+| 400 | `missing_parameter` | `title` not provided |
+| 400 | `invalid_request` | Malformed JSON |
 
 ---
 
-### Get Crawl Status
+## GET /api/v1/crawl/:id
 
-Get the status of a crawl job.
+Poll the status of a crawl job.
 
-```
-GET /crawl/:job_id
-```
-
-#### Response (In Progress)
+**Response `200`**
 
 ```json
 {
-  "job_id": "crawl_abc123",
-  "status": "running",
-  "progress": {
-    "pages_crawled": 234,
-    "pages_total": 500,
-    "percent_complete": 46.8,
-    "elapsed": "3m45s",
-    "estimated_remaining": "4m12s"
-  }
+  "job_id": "crawl_a1b2c3d4",
+  "status": "crawling",
+  "title": "Mathematics",
+  "started_at": "2024-01-15T10:30:00Z",
+  "completed_at": null
 }
 ```
 
-#### Response (Complete)
+`status` values: `started` | `crawling` | `syncing` | `done` | `failed`
 
-```json
-{
-  "job_id": "crawl_abc123",
-  "status": "complete",
-  "result": {
-    "pages_crawled": 500,
-    "links_found": 47823,
-    "duration": "8m12s",
-    "errors": 3
-  }
-}
-```
+`completed_at` is set (non-null) when `status` is `done` or `failed`. `error` is present on `failed`.
+
+**Errors**
+
+| Status | `error` field | Condition |
+|--------|---------------|-----------|
+| 404 | `not_found` | Unknown job ID |
 
 ---
 
-### Cache Statistics
+## Error Response Format
 
-Get cache statistics.
-
-```
-GET /cache/stats
-```
-
-#### Response
+All errors use this shape:
 
 ```json
 {
-  "total_pages": 1542,
-  "total_links": 523847,
-  "database_size_mb": 45.2,
-  "oldest_entry": "2024-01-08T14:22:00Z",
-  "newest_entry": "2024-01-15T10:30:00Z",
-  "cache_hit_rate": 0.78
+  "error": "not_found",
+  "message": "Page 'Nonexistent' not found",
+  "request_id": "req_abc123"
 }
 ```
 
----
-
-### Clear Cache
-
-Clear the cache (admin only).
-
-```
-DELETE /cache
-```
-
-#### Query Parameters
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `older_than` | string | no | Clear entries older than duration (e.g., "7d") |
-| `title` | string | no | Clear specific page |
-
-#### Response
-
-```json
-{
-  "cleared": true,
-  "pages_removed": 142,
-  "links_removed": 48293
-}
-```
-
----
-
-## Error Responses
-
-All errors follow this format:
-
-```json
-{
-  "error": {
-    "code": "PAGE_NOT_FOUND",
-    "message": "The requested Wikipedia page does not exist",
-    "details": {
-      "title": "NonexistentPage123"
-    }
-  }
-}
-```
-
-### Error Codes
-
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `INVALID_TITLE` | 400 | Invalid page title |
-| `INVALID_PARAMETER` | 400 | Invalid query parameter |
-| `PAGE_NOT_FOUND` | 404 | Wikipedia page not found |
-| `PATH_NOT_FOUND` | 404 | No path exists between pages |
-| `RATE_LIMITED` | 429 | Too many requests |
-| `TIMEOUT` | 408 | Request timed out |
-| `EMBEDDINGS_UNAVAILABLE` | 503 | Embeddings service down |
-| `INTERNAL_ERROR` | 500 | Internal server error |
+`request_id` matches the `X-Request-ID` response header.
 
 ---
 
 ## Rate Limiting
 
-The API implements rate limiting to prevent abuse:
+Requests are rate-limited per source IP using a token bucket. Defaults: 100 req/s with a burst of 200.
 
-- **Default**: 60 requests per minute
-- **Crawl endpoints**: 10 requests per hour
-
-Rate limit headers are included in responses:
-
-```
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1705312800
-```
+When the limit is exceeded the server returns `429 Too Many Requests`. Configure with `api.rate_limit` and `api.rate_burst` in `config.yaml`.
 
 ---
 
-## Pagination
+## Request Tracing
 
-Endpoints returning lists support pagination:
-
-```
-GET /page/Albert_Einstein?limit=50&offset=100
-```
-
-Response includes pagination metadata:
-
-```json
-{
-  "data": [...],
-  "pagination": {
-    "limit": 50,
-    "offset": 100,
-    "total": 347,
-    "has_more": true
-  }
-}
-```
+Every request gets an `X-Request-ID` header. If the client sends one it is echoed back; otherwise the server generates a UUID. The ID appears in server logs and in error response bodies.
 
 ---
 
-## Examples
+## Code Examples
+
+### curl
+
+```bash
+# Health
+curl http://localhost:8080/health
+
+# Page info
+curl http://localhost:8080/api/v1/page/Albert_Einstein
+
+# Shortest path (auto backend)
+curl "http://localhost:8080/api/v1/path?from=Albert_Einstein&to=Barack_Obama"
+
+# Force Neo4j backend
+curl "http://localhost:8080/api/v1/path?from=Albert_Einstein&to=Barack_Obama&backend=neo4j"
+
+# Bidirectional search with depth limit
+curl "http://localhost:8080/api/v1/path?from=Cat&to=Philosophy&algorithm=bidirectional&max_depth=8"
+
+# 2-hop neighborhood, max 50 nodes
+curl "http://localhost:8080/api/v1/connections/Physics?depth=2&max_nodes=50"
+
+# Start crawl
+curl -X POST http://localhost:8080/api/v1/crawl \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Mathematics", "depth": 2, "max_pages": 1000}'
+
+# Poll crawl job
+curl http://localhost:8080/api/v1/crawl/crawl_a1b2c3d4
+```
 
 ### Python
 
 ```python
 import requests
 
-BASE_URL = "http://localhost:8080"
+BASE = "http://localhost:8080"
 
-# Fetch a page
-response = requests.get(f"{BASE_URL}/page/Albert_Einstein")
-page = response.json()
-print(f"Found {page['link_count']} links")
-
-# Find a path
-response = requests.get(f"{BASE_URL}/path", params={
-    "from": "Albert_Einstein",
-    "to": "Barack_Obama"
-})
-result = response.json()
+# Path search
+r = requests.get(f"{BASE}/api/v1/path", params={"from": "Albert Einstein", "to": "Barack Obama"})
+result = r.json()
 if result["found"]:
     print(" → ".join(result["path"]))
+
+# Neighborhood graph
+r = requests.get(f"{BASE}/api/v1/connections/Physics", params={"depth": 2, "max_nodes": 100})
+data = r.json()
+print(f"{data['node_count']} nodes, {data['edge_count']} edges")
 ```
 
 ### JavaScript
 
 ```javascript
-const BASE_URL = 'http://localhost:8080';
+const BASE = 'http://localhost:8080';
 
-// Fetch a page
-const pageResponse = await fetch(`${BASE_URL}/page/Albert_Einstein`);
-const page = await pageResponse.json();
-console.log(`Found ${page.link_count} links`);
+// Path search
+const r = await fetch(`${BASE}/api/v1/path?from=Albert+Einstein&to=Barack+Obama`);
+const result = await r.json();
+if (result.found) console.log(result.path.join(' → '));
 
-// Find a path
-const pathResponse = await fetch(
-  `${BASE_URL}/path?from=Albert_Einstein&to=Barack_Obama`
-);
-const result = await pathResponse.json();
-if (result.found) {
-  console.log(result.path.join(' → '));
-}
+// Start a crawl and poll until done
+const start = await fetch(`${BASE}/api/v1/crawl`, {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({title: 'Mathematics', depth: 2, max_pages: 500})
+});
+const {job_id} = await start.json();
+
+let status;
+do {
+  await new Promise(r => setTimeout(r, 2000));
+  status = await (await fetch(`${BASE}/api/v1/crawl/${job_id}`)).json();
+} while (status.status !== 'done' && status.status !== 'failed');
+console.log('Crawl finished:', status.status);
 ```
-
-### cURL
-
-```bash
-# Fetch a page
-curl -s "http://localhost:8080/page/Albert_Einstein" | jq
-
-# Find a path
-curl -s "http://localhost:8080/path?from=Albert_Einstein&to=Barack_Obama" | jq
-
-# Start a crawl
-curl -X POST "http://localhost:8080/crawl" \
-  -H "Content-Type: application/json" \
-  -d '{"start_page": "Physics", "max_pages": 100}'
-```
-
----
-
-## Changelog
-
-### v0.1.0
-
-- Initial API release
-- Basic page fetching
-- Cache management
-
-### v0.2.0 (Planned)
-
-- Pathfinding endpoints
-- Graph connection queries
-
-### v0.3.0 (Planned)
-
-- Semantic similarity search
-- Embeddings integration

@@ -1,5 +1,9 @@
 # Graph Database Migration Notes
 
+**Status:** Phase 1 complete. The Neo4j client (`internal/neostore/`) is integrated and active. Path and page queries use Neo4j when `neo4j.enabled = true`. Phases 2–5 (bulk sync tuning, incremental sync service, cleanup of legacy in-memory path) are ongoing.
+
+---
+
 ## Problem Summary
 
 At 162 million edges and 5.6 million nodes, WikiGraph's SQLite-based architecture has hit a wall. Server startup takes 15+ minutes, and the gob-based cache serialization system completely fails at this scale (7GB files, 30+ minute load times with frequent timeouts).
@@ -253,33 +257,29 @@ services:
 
 ## Implementation Checklist
 
-### Phase 1: Setup & POC
-- [ ] Set up Neo4j with Docker
-- [ ] Create Go Neo4j client wrapper
-- [ ] Test bulk import with small dataset (1K pages)
-- [ ] Verify query performance matches expectations
+### Phase 1: Setup & POC (complete)
+- [x] Set up Neo4j with Docker
+- [x] Create Go Neo4j client wrapper (`internal/neostore/`)
+- [x] Test bulk import with small dataset
+- [x] Verify query performance matches expectations
+- [x] Integrate Neo4j into path and page query handlers (`?backend=auto|neo4j|memory`)
+- [x] Add Neo4j health status to `/health` endpoint
+- [x] Add `wikigraph sync` CLI command
 
 ### Phase 2: Bulk Sync
-- [ ] Implement initial bulk sync from SQLite
-- [ ] Add sync progress tracking
+- [ ] Optimize initial bulk sync for 162M edges
+- [ ] Add sync progress tracking and metrics
 - [ ] Test with full 162M edge dataset
-- [ ] Measure and optimize sync time
+- [ ] Measure and tune sync throughput
 
-### Phase 3: API Integration
-- [ ] Update path query handler to use Neo4j
-- [ ] Update connections handler to use Neo4j
-- [ ] Add fallback logic if Neo4j unavailable
-- [ ] Update health check to include Neo4j status
-
-### Phase 4: Incremental Sync
+### Phase 3: Incremental Sync
 - [ ] Implement change tracking in SQLite
-- [ ] Create incremental sync service
-- [ ] Add sync scheduling (every 5 minutes)
-- [ ] Test data consistency
+- [ ] Create background incremental sync service (5-minute interval)
+- [ ] Test data consistency between SQLite and Neo4j
 
-### Phase 5: Cleanup
-- [ ] Update documentation
-- [ ] Remove old in-memory graph loading code
+### Phase 4: Cleanup
+- [ ] Remove in-memory graph loading once Neo4j is stable at scale
+- [ ] Remove gob cache (no longer needed)
 - [ ] Add performance benchmarks
 - [ ] Document recovery procedures
 
@@ -343,10 +343,12 @@ RETURN DISTINCT neighbor.title
 - Facebook TAO paper: https://research.facebook.com/publications/tao-the-power-of-the-graph/
 - LinkedIn's graph architecture: https://engineering.linkedin.com/blog/2016/03/followfeed--linkedin-s-feed-made-faster-and-smarter
 
-## Implementation
+## Code Locations
 
-Code locations:
-- `internal/neo4j/` - Neo4j client wrapper (to be added)
-- `internal/sync/` - SQLite→Neo4j sync (to be added)
-- `internal/api/handlers.go` - Query handlers (to be updated)
-- `cmd/wikigraph/sync.go` - Sync commands (to be added)
+| Path | Purpose |
+|------|---------|
+| `internal/neostore/client.go` | Neo4j driver wrapper, health check |
+| `internal/neostore/queries.go` | Cypher queries for path and page lookups |
+| `internal/neostore/sync.go` | SQLite → Neo4j batch sync |
+| `internal/api/handlers.go` | Path/page handlers with `?backend=` selection |
+| `cmd/wikigraph/sync.go` | `wikigraph sync` CLI command |

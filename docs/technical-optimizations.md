@@ -1347,6 +1347,74 @@ wikigraph analyze                 # Run ANALYZE manually
 
 ---
 
+---
+
+## Graph Algorithm Optimizations (Added After Phase 4)
+
+### OPT-G1: O(1) Duplicate Detection in AddEdge
+
+**Problem:** `AddEdge` scanned `OutLinks []*Node` on every call to check for duplicates — O(degree) per insert.
+
+**Solution:** Each `Node` carries an unexported `out map[*Node]bool` alongside `OutLinks`. The map gives O(1) duplicate lookup. The map is excluded from gob serialization so the disk cache format is unchanged; gob-loaded nodes rebuild `out` lazily on the first `AddEdge` call.
+
+```go
+// Before: O(degree) scan
+for _, n := range node.OutLinks {
+    if n == target { return } // duplicate
+}
+
+// After: O(1) map lookup
+if node.out[target] { return }
+node.out[target] = true
+```
+
+**Impact:** AddEdge is effectively O(1) regardless of node degree. Critical for high-degree hub pages (e.g., "United States" with 50k+ out-links).
+
+---
+
+### OPT-G2: O(1) Dequeue in GetNeighborhood BFS
+
+**Problem:** The BFS queue in `GetNeighborhood` used `queue = queue[1:]` to dequeue — this re-slices the backing array on each step, effectively O(n) total due to GC pressure and copy-on-grow.
+
+**Solution:** Replace slice reslicing with a head-index pattern:
+
+```go
+// Before
+node := queue[0]
+queue = queue[1:]  // O(n) amortized
+
+// After
+head := 0
+node := queue[head]
+head++             // O(1)
+```
+
+**Impact:** GetNeighborhood on large neighborhoods no longer allocates quadratically.
+
+---
+
+### OPT-G3: Context-Aware Graph Traversal
+
+**Problem:** `FindPath`, `FindPathWithLimit`, `FindPathBidirectional`, and `GetNeighborhood` had no way to be cancelled mid-search. Long-running searches on disconnected subgraphs would run until exhausted, ignoring request timeouts.
+
+**Solution:** All four functions now accept `context.Context` as their first argument and check `ctx.Err()` at BFS level boundaries (between depth increments, not inside the inner neighbor loop to avoid per-edge overhead).
+
+```go
+func (g *Graph) FindPath(ctx context.Context, from, to string) PathResult {
+    // ...
+    for len(queue) > 0 {
+        if ctx.Err() != nil {
+            return PathResult{Found: false}
+        }
+        // process level...
+    }
+}
+```
+
+**Impact:** Request timeouts are respected. The API server sets a 30-second context deadline; searches honour it without needing a separate goroutine/timer.
+
+---
+
 ## Files Reference
 
 ### New Files Created

@@ -49,53 +49,102 @@ docker-compose down
 ### Manual Setup
 
 ```bash
-# Terminal 1: Run the Go API
-make build
-./wikigraph serve
+# Build
+go build -o wikigraph.exe ./cmd/wikigraph
 
-# Terminal 2: Run the Python embeddings service
-cd python
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python main.py
+# Start the API server (graph loads in background)
+./wikigraph.exe serve
+
+# Optional: start Neo4j first if using the Neo4j backend
+docker run -d --name neo4j \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/wikigraph \
+  neo4j:5.15
+
+# Then sync SQLite data to Neo4j
+./wikigraph.exe sync
 ```
 
 ---
 
 ## Docker Deployment
 
-### Build Images
+### Build Image
 
 ```bash
-# Build Go API image
 docker build -t wikigraph:latest .
-
-# Build Python embeddings image
-docker build -t wikigraph-embeddings:latest ./python
 ```
 
-### Run Containers
+### Run without Neo4j (in-memory graph only)
 
 ```bash
-# Create network
-docker network create wikigraph-network
-
-# Run embeddings service
 docker run -d \
-  --name wikigraph-embeddings \
-  --network wikigraph-network \
-  -p 8001:8001 \
-  wikigraph-embeddings:latest
-
-# Run API service
-docker run -d \
-  --name wikigraph-api \
-  --network wikigraph-network \
+  --name wikigraph \
   -p 8080:8080 \
-  -e WIKIGRAPH_EMBEDDINGS_URL=http://wikigraph-embeddings:8001 \
   -v wikigraph-data:/app/data \
   wikigraph:latest
+```
+
+### Run with Neo4j
+
+```bash
+# Start Neo4j
+docker run -d --name neo4j \
+  --network wikigraph-network \
+  -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/changeme \
+  -e NEO4J_dbms_memory_heap_max__size=4G \
+  -e NEO4J_dbms_memory_pagecache_size=2G \
+  -v neo4j-data:/data \
+  neo4j:5.15
+
+# Start WikiGraph pointing at Neo4j
+docker run -d \
+  --name wikigraph \
+  --network wikigraph-network \
+  -p 8080:8080 \
+  -e WIKIGRAPH_NEO4J_ENABLED=true \
+  -e WIKIGRAPH_NEO4J_URI=bolt://neo4j:7687 \
+  -e WIKIGRAPH_NEO4J_PASSWORD=changeme \
+  -v wikigraph-data:/app/data \
+  wikigraph:latest
+
+# Sync SQLite → Neo4j (run once after initial crawl)
+docker exec wikigraph /app/wikigraph sync
+```
+
+### docker-compose.yml
+
+```yaml
+services:
+  wikigraph:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - WIKIGRAPH_NEO4J_ENABLED=true
+      - WIKIGRAPH_NEO4J_URI=bolt://neo4j:7687
+      - WIKIGRAPH_NEO4J_PASSWORD=${NEO4J_PASSWORD}
+    volumes:
+      - wikigraph-data:/app/data
+    depends_on:
+      - neo4j
+
+  neo4j:
+    image: neo4j:5.15
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD}
+      - NEO4J_dbms_memory_heap_max__size=4G
+      - NEO4J_dbms_memory_pagecache_size=2G
+    volumes:
+      - neo4j-data:/data
+
+volumes:
+  wikigraph-data:
+  neo4j-data:
 ```
 
 ---

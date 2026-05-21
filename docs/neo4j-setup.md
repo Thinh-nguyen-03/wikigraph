@@ -196,17 +196,25 @@ Reduce heap size in [docker-compose.yml](../docker-compose.yml):
 - NEO4J_dbms_memory_pagecache_size=1G
 ```
 
-## Next Steps
+## Using Neo4j via the API
 
-After successful sync and testing:
+Once synced, the REST API automatically routes to Neo4j when `neo4j.enabled = true`:
 
-1. **Update API handlers** - Modify [internal/api/handlers.go](../internal/api/handlers.go) to query Neo4j
-2. **Implement incremental sync** - Add background sync service
-3. **Update serve command** - Initialize Neo4j connection in server startup
-4. **Add benchmarks** - Compare in-memory vs Neo4j query performance
-5. **Production deployment** - Set up separate Neo4j instance
+```bash
+# Start the server (Neo4j used by default when connected)
+wikigraph serve
 
-See [graph-database-migration.md](graph-database-migration.md) for the full migration plan.
+# Force Neo4j for a single request
+curl "http://localhost:8080/api/v1/path?from=Python&to=Albert_Einstein&backend=neo4j"
+
+# Force in-memory graph
+curl "http://localhost:8080/api/v1/path?from=Python&to=Albert_Einstein&backend=memory"
+
+# Health check shows Neo4j status
+curl http://localhost:8080/health
+```
+
+See [graph-database-migration.md](graph-database-migration.md) for the full migration plan and remaining phases.
 
 ## Commands Reference
 
