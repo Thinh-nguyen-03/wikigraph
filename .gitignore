@@ -2,6 +2,7 @@
 /wikigraph
 /server
 *.exe
+*.exe~
 
 # Database
 *.db

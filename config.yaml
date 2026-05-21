@@ -28,7 +28,7 @@ log:
 
 neo4j:
   # Enable Neo4j for graph queries (set to true to use Neo4j instead of in-memory graph)
-  enabled: false
+  enabled: true
 
   # Neo4j connection URI (bolt protocol)
   uri: "bolt://localhost:7687"
