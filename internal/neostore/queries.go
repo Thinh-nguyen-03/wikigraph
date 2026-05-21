@@ -1,4 +1,4 @@
-package neo4j
+package neostore
 
 import (
 	"context"
@@ -107,11 +107,20 @@ func (c *Client) FindShortestPath(ctx context.Context, fromTitle, toTitle string
 		maxDepth = 6
 	}
 
+	// Handle same-page case
+	if fromTitle == toTitle {
+		return &PathResult{
+			Titles: []string{fromTitle},
+			Length: 0,
+		}, nil
+	}
+
 	result, err := c.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
 		query := fmt.Sprintf(`
 			MATCH (start:Page {title: $fromTitle}), (end:Page {title: $toTitle})
-			MATCH path = shortestPath((start)-[:LINKS_TO*1..%d]-(end))
+			MATCH path = shortestPath((start)-[:LINKS_TO*1..%d]->(end))
 			RETURN [node in nodes(path) | node.title] AS titles, length(path) AS length
+			LIMIT 1
 		`, maxDepth)
 
 		params := map[string]interface{}{
@@ -164,14 +173,15 @@ func (c *Client) GetOutLinks(ctx context.Context, title string, limit int) ([]st
 	}
 
 	result, err := c.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
-		query := fmt.Sprintf(`
+		query := `
 			MATCH (p:Page {title: $title})-[:LINKS_TO]->(target:Page)
 			RETURN target.title AS title
-			LIMIT %d
-		`, limit)
+			LIMIT $limit
+		`
 
 		params := map[string]interface{}{
 			"title": title,
+			"limit": limit,
 		}
 
 		queryResult, err := tx.Run(ctx, query, params)
@@ -203,14 +213,15 @@ func (c *Client) GetInLinks(ctx context.Context, title string, limit int) ([]str
 	}
 
 	result, err := c.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
-		query := fmt.Sprintf(`
+		query := `
 			MATCH (source:Page)-[:LINKS_TO]->(p:Page {title: $title})
 			RETURN source.title AS title
-			LIMIT %d
-		`, limit)
+			LIMIT $limit
+		`
 
 		params := map[string]interface{}{
 			"title": title,
+			"limit": limit,
 		}
 
 		queryResult, err := tx.Run(ctx, query, params)
@@ -235,6 +246,131 @@ func (c *Client) GetInLinks(ctx context.Context, title string, limit int) ([]str
 	return result.([]string), nil
 }
 
+// NeighborhoodNode represents a node in the neighborhood with hop distance
+type NeighborhoodNode struct {
+	Title string
+	Hops  int
+}
+
+// NeighborhoodEdge represents an edge in the neighborhood
+type NeighborhoodEdge struct {
+	Source string
+	Target string
+}
+
+// NeighborhoodResult contains the full N-hop neighborhood
+type NeighborhoodResult struct {
+	Nodes []NeighborhoodNode
+	Edges []NeighborhoodEdge
+}
+
+// GetNeighborhood returns the N-hop neighborhood with nodes, edges, and hop distances
+func (c *Client) GetNeighborhood(ctx context.Context, title string, depth int, maxNodes int) (*NeighborhoodResult, error) {
+	if depth == 0 {
+		depth = 2
+	}
+	if maxNodes == 0 {
+		maxNodes = 1000
+	}
+
+	result, err := c.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		// Get nodes with their minimum hop distance (using directed paths in both directions)
+		nodesQuery := fmt.Sprintf(`
+			MATCH (start:Page {title: $title})
+			CALL {
+				WITH start
+				MATCH path = (start)-[:LINKS_TO*1..%d]->(neighbor:Page)
+				WHERE neighbor <> start
+				RETURN neighbor, length(path) AS hops
+				UNION
+				WITH start
+				MATCH path = (start)<-[:LINKS_TO*1..%d]-(neighbor:Page)
+				WHERE neighbor <> start
+				RETURN neighbor, length(path) AS hops
+			}
+			WITH neighbor, min(hops) AS minHops
+			RETURN neighbor.title AS title, minHops AS hops
+			ORDER BY minHops, title
+			LIMIT %d
+		`, depth, depth, maxNodes)
+
+		params := map[string]interface{}{
+			"title": title,
+		}
+
+		nodesResult, err := tx.Run(ctx, nodesQuery, params)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeSet := make(map[string]int)
+		nodeSet[title] = 0 // Include center node
+
+		for nodesResult.Next(ctx) {
+			record := nodesResult.Record()
+			nodeTitle, _ := record.Get("title")
+			hops, _ := record.Get("hops")
+			nodeSet[nodeTitle.(string)] = int(hops.(int64))
+		}
+		if err := nodesResult.Err(); err != nil {
+			return nil, err
+		}
+
+		// Build node list
+		nodes := make([]NeighborhoodNode, 0, len(nodeSet))
+		for t, h := range nodeSet {
+			nodes = append(nodes, NeighborhoodNode{Title: t, Hops: h})
+		}
+
+		// Get edges between nodes in the neighborhood
+		// Collect node titles for filtering
+		nodeTitles := make([]string, 0, len(nodeSet))
+		for t := range nodeSet {
+			nodeTitles = append(nodeTitles, t)
+		}
+
+		edgesQuery := `
+			MATCH (n1:Page)-[:LINKS_TO]->(n2:Page)
+			WHERE n1.title IN $nodes AND n2.title IN $nodes
+			RETURN DISTINCT n1.title AS source, n2.title AS target
+		`
+
+		edgesParams := map[string]interface{}{
+			"nodes": nodeTitles,
+		}
+
+		edgesResult, err := tx.Run(ctx, edgesQuery, edgesParams)
+		if err != nil {
+			return nil, err
+		}
+
+		var edges []NeighborhoodEdge
+		for edgesResult.Next(ctx) {
+			record := edgesResult.Record()
+			source, _ := record.Get("source")
+			target, _ := record.Get("target")
+			edges = append(edges, NeighborhoodEdge{
+				Source: source.(string),
+				Target: target.(string),
+			})
+		}
+		if err := edgesResult.Err(); err != nil {
+			return nil, err
+		}
+
+		return &NeighborhoodResult{
+			Nodes: nodes,
+			Edges: edges,
+		}, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("get neighborhood query failed: %w", err)
+	}
+
+	return result.(*NeighborhoodResult), nil
+}
+
 // GetConnections returns all pages within N hops of the given page
 func (c *Client) GetConnections(ctx context.Context, title string, depth int, limit int) ([]string, error) {
 	if depth == 0 {
@@ -245,14 +381,16 @@ func (c *Client) GetConnections(ctx context.Context, title string, depth int, li
 	}
 
 	result, err := c.ExecuteRead(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		// Use directed search for better performance
 		query := fmt.Sprintf(`
-			MATCH (start:Page {title: $title})-[:LINKS_TO*1..%d]-(neighbor:Page)
+			MATCH (start:Page {title: $title})-[:LINKS_TO*1..%d]->(neighbor:Page)
 			RETURN DISTINCT neighbor.title AS title
-			LIMIT %d
-		`, depth, limit)
+			LIMIT $limit
+		`, depth)
 
 		params := map[string]interface{}{
 			"title": title,
+			"limit": limit,
 		}
 
 		queryResult, err := tx.Run(ctx, query, params)
@@ -333,4 +471,24 @@ func (c *Client) ClearDatabase(ctx context.Context) error {
 		return nil, err
 	})
 	return err
+}
+
+// CreateIndexes creates necessary indexes for query performance
+// Run this once after database setup
+func (c *Client) CreateIndexes(ctx context.Context) error {
+	_, err := c.ExecuteWrite(ctx, func(tx neo4j.ManagedTransaction) (interface{}, error) {
+		// Create index on Page.title for faster lookups
+		query := `CREATE INDEX page_title_index IF NOT EXISTS FOR (p:Page) ON (p.title)`
+		_, err := tx.Run(ctx, query, nil)
+		return nil, err
+	})
+	return err
+}
+
+// FindShortestPathBidirectional finds the shortest path between two pages.
+// True application-level bidirectional BFS requires APOC (apoc.algo.shortestPath).
+// Without APOC, this delegates to FindShortestPath which uses Neo4j's native
+// shortestPath() — an optimized internal BFS that is already efficient on large graphs.
+func (c *Client) FindShortestPathBidirectional(ctx context.Context, fromTitle, toTitle string, maxDepth int) (*PathResult, error) {
+	return c.FindShortestPath(ctx, fromTitle, toTitle, maxDepth)
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/fetcher"
+	"github.com/Thinh-nguyen-03/wikigraph/internal/neostore"
 )
 
 var (
@@ -133,12 +134,50 @@ func runServe(cmd *cobra.Command, args []string) error {
 		serverCfg.Production = serveProduction
 	}
 
-	// Create and start server with GraphService
-	server := api.NewWithGraphService(graphService, c, f, serverCfg)
+	// Initialize Neo4j client if enabled
+	slog.Info("neo4j config check", "enabled", cfg.Neo4j.Enabled, "uri", cfg.Neo4j.URI)
+	var neo4jClient *neostore.Client
+	var neo4jSyncer *neostore.Syncer
+	if cfg.Neo4j.Enabled {
+		slog.Info("connecting to Neo4j", "uri", cfg.Neo4j.URI)
+		client, err := neostore.NewClient(neostore.Config{
+			URI:                          cfg.Neo4j.URI,
+			Username:                     cfg.Neo4j.Username,
+			Password:                     cfg.Neo4j.Password,
+			MaxConnectionPoolSize:        cfg.Neo4j.MaxConnectionPoolSize,
+			ConnectionAcquisitionTimeout: cfg.Neo4j.ConnectionAcquisitionTimeout,
+		})
+		if err != nil {
+			slog.Warn("failed to create Neo4j client, falling back to in-memory graph", "error", err)
+		} else {
+			// Verify connectivity
+			if err := client.VerifyConnectivity(ctx); err != nil {
+				slog.Warn("Neo4j connectivity check failed, falling back to in-memory graph", "error", err)
+				client.Close(ctx)
+			} else {
+				neo4jClient = client
+				neo4jSyncer = neostore.NewSyncer(neo4jClient, db.DB)
+				slog.Info("connected to Neo4j successfully")
+				defer neo4jClient.Close(ctx)
+			}
+		}
+	}
+
+	// Create and start server
+	var server *api.Server
+	if neo4jClient != nil {
+		server = api.NewWithNeo4j(graphService, c, f, neo4jClient, neo4jSyncer, serverCfg)
+	} else {
+		server = api.NewWithGraphService(graphService, c, f, serverCfg)
+	}
 
 	fmt.Printf("Starting WikiGraph API server on http://%s:%d\n", serverCfg.Host, serverCfg.Port)
-	fmt.Println("\nGraph loading in background - server is immediately available")
-	fmt.Println("Note: Path queries will return 503 until graph is ready")
+	if neo4jClient != nil {
+		fmt.Println("\nNeo4j backend enabled - queries served from graph database")
+	} else {
+		fmt.Println("\nGraph loading in background - server is immediately available")
+		fmt.Println("Note: Path queries will return 503 until graph is ready")
+	}
 	fmt.Println("\nAvailable endpoints:")
 	fmt.Println("  GET  /health                        - Health check (shows graph status)")
 	fmt.Println("  GET  /api/v1/page/:title            - Get page links")

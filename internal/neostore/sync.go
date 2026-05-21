@@ -1,10 +1,10 @@
-package neo4j
+package neostore
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -12,19 +12,11 @@ import (
 type Syncer struct {
 	client *Client
 	db     *sql.DB
-	logger *log.Logger
 }
 
 // NewSyncer creates a new syncer instance
-func NewSyncer(client *Client, db *sql.DB, logger *log.Logger) *Syncer {
-	if logger == nil {
-		logger = log.Default()
-	}
-	return &Syncer{
-		client: client,
-		db:     db,
-		logger: logger,
-	}
+func NewSyncer(client *Client, db *sql.DB) *Syncer {
+	return &Syncer{client: client, db: db}
 }
 
 // SyncStats holds statistics about a sync operation
@@ -37,60 +29,47 @@ type SyncStats struct {
 }
 
 // InitialSync performs a full sync from SQLite to Neo4j
-// This is a one-time operation to populate Neo4j with all existing data
 func (s *Syncer) InitialSync(ctx context.Context, batchSize int) (*SyncStats, error) {
 	if batchSize == 0 {
-		batchSize = 10000 // Default batch size
+		batchSize = 10000
 	}
 
-	stats := &SyncStats{
-		StartTime: time.Now(),
-	}
+	stats := &SyncStats{StartTime: time.Now()}
 
-	s.logger.Println("Starting initial sync from SQLite to Neo4j...")
+	slog.Info("starting initial sync from sqlite to neo4j")
 
-	// Step 1: Initialize schema
-	s.logger.Println("Initializing Neo4j schema...")
+	slog.Info("initializing neo4j schema")
 	if err := s.client.InitializeSchema(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize schema: %w", err)
 	}
 
-	// Step 2: Sync all successful pages as nodes
-	s.logger.Println("Syncing page nodes...")
+	slog.Info("syncing page nodes")
 	nodesCreated, err := s.syncNodes(ctx, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync nodes: %w", err)
 	}
 	stats.NodesCreated = nodesCreated
-	s.logger.Printf("Created %d nodes", nodesCreated)
+	slog.Info("nodes synced", "count", nodesCreated)
 
-	// Step 3: Sync all links as edges
-	s.logger.Println("Syncing link edges...")
+	slog.Info("syncing link edges")
 	edgesCreated, err := s.syncEdges(ctx, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync edges: %w", err)
 	}
 	stats.EdgesCreated = edgesCreated
-	s.logger.Printf("Created %d edges", edgesCreated)
+	slog.Info("edges synced", "count", edgesCreated)
 
 	stats.EndTime = time.Now()
 	stats.Duration = stats.EndTime.Sub(stats.StartTime)
-
-	s.logger.Printf("Initial sync completed in %s", stats.Duration)
+	slog.Info("initial sync complete", "duration", stats.Duration)
 	return stats, nil
 }
 
 // syncNodes syncs all successful pages from SQLite to Neo4j
 func (s *Syncer) syncNodes(ctx context.Context, batchSize int) (int64, error) {
-	// Query all successful pages
-	query := `
-		SELECT title
-		FROM pages
-		WHERE fetch_status = 'success'
-		ORDER BY id
-	`
-
-	rows, err := s.db.QueryContext(ctx, query)
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT title FROM pages WHERE fetch_status = 'success' ORDER BY id
+	`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query pages: %w", err)
 	}
@@ -104,7 +83,6 @@ func (s *Syncer) syncNodes(ctx context.Context, batchSize int) (int64, error) {
 		if err := rows.Scan(&title); err != nil {
 			return totalCreated, fmt.Errorf("failed to scan row: %w", err)
 		}
-
 		batch = append(batch, title)
 
 		if len(batch) >= batchSize {
@@ -112,17 +90,13 @@ func (s *Syncer) syncNodes(ctx context.Context, batchSize int) (int64, error) {
 				return totalCreated, fmt.Errorf("failed to create node batch: %w", err)
 			}
 			totalCreated += int64(len(batch))
-
-			// Log progress every batch
 			if totalCreated%100000 == 0 {
-				s.logger.Printf("Progress: %d nodes synced...", totalCreated)
+				slog.Info("sync progress", "nodes_synced", totalCreated)
 			}
-
-			batch = batch[:0] // Clear batch
+			batch = batch[:0]
 		}
 	}
 
-	// Create remaining batch
 	if len(batch) > 0 {
 		if err := s.client.CreateNodesBatch(ctx, batch); err != nil {
 			return totalCreated, fmt.Errorf("failed to create final node batch: %w", err)
@@ -135,16 +109,13 @@ func (s *Syncer) syncNodes(ctx context.Context, batchSize int) (int64, error) {
 
 // syncEdges syncs all links from SQLite to Neo4j
 func (s *Syncer) syncEdges(ctx context.Context, batchSize int) (int64, error) {
-	// Query all links with source page titles
-	query := `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.title AS source_title, l.target_title
 		FROM links l
 		JOIN pages p ON p.id = l.source_id
 		WHERE p.fetch_status = 'success'
 		ORDER BY l.id
-	`
-
-	rows, err := s.db.QueryContext(ctx, query)
+	`)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query links: %w", err)
 	}
@@ -158,28 +129,20 @@ func (s *Syncer) syncEdges(ctx context.Context, batchSize int) (int64, error) {
 		if err := rows.Scan(&sourceTitle, &targetTitle); err != nil {
 			return totalCreated, fmt.Errorf("failed to scan row: %w", err)
 		}
-
-		batch = append(batch, EdgeInput{
-			SourceTitle: sourceTitle,
-			TargetTitle: targetTitle,
-		})
+		batch = append(batch, EdgeInput{SourceTitle: sourceTitle, TargetTitle: targetTitle})
 
 		if len(batch) >= batchSize {
 			if err := s.client.CreateEdgesBatch(ctx, batch); err != nil {
 				return totalCreated, fmt.Errorf("failed to create edge batch: %w", err)
 			}
 			totalCreated += int64(len(batch))
-
-			// Log progress every batch
 			if totalCreated%1000000 == 0 {
-				s.logger.Printf("Progress: %d edges synced...", totalCreated)
+				slog.Info("sync progress", "edges_synced", totalCreated)
 			}
-
-			batch = batch[:0] // Clear batch
+			batch = batch[:0]
 		}
 	}
 
-	// Create remaining batch
 	if len(batch) > 0 {
 		if err := s.client.CreateEdgesBatch(ctx, batch); err != nil {
 			return totalCreated, fmt.Errorf("failed to create final edge batch: %w", err)
@@ -190,26 +153,22 @@ func (s *Syncer) syncEdges(ctx context.Context, batchSize int) (int64, error) {
 	return totalCreated, rows.Err()
 }
 
-// IncrementalSync syncs only new or updated data since the given timestamp
+// IncrementalSync syncs only new data since the given timestamp
 func (s *Syncer) IncrementalSync(ctx context.Context, since time.Time, batchSize int) (*SyncStats, error) {
 	if batchSize == 0 {
 		batchSize = 5000
 	}
 
-	stats := &SyncStats{
-		StartTime: time.Now(),
-	}
+	stats := &SyncStats{StartTime: time.Now()}
 
-	s.logger.Printf("Starting incremental sync (since %s)...", since.Format(time.RFC3339))
+	slog.Info("starting incremental sync", "since", since)
 
-	// Sync new pages
 	nodesCreated, err := s.syncNewNodes(ctx, since, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync new nodes: %w", err)
 	}
 	stats.NodesCreated = nodesCreated
 
-	// Sync new links
 	edgesCreated, err := s.syncNewEdges(ctx, since, batchSize)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sync new edges: %w", err)
@@ -220,8 +179,11 @@ func (s *Syncer) IncrementalSync(ctx context.Context, since time.Time, batchSize
 	stats.Duration = stats.EndTime.Sub(stats.StartTime)
 
 	if stats.NodesCreated > 0 || stats.EdgesCreated > 0 {
-		s.logger.Printf("Incremental sync completed: %d nodes, %d edges in %s",
-			stats.NodesCreated, stats.EdgesCreated, stats.Duration)
+		slog.Info("incremental sync complete",
+			"nodes", stats.NodesCreated,
+			"edges", stats.EdgesCreated,
+			"duration", stats.Duration,
+		)
 	}
 
 	return stats, nil
@@ -229,14 +191,9 @@ func (s *Syncer) IncrementalSync(ctx context.Context, since time.Time, batchSize
 
 // syncNewNodes syncs pages created after the given timestamp
 func (s *Syncer) syncNewNodes(ctx context.Context, since time.Time, batchSize int) (int64, error) {
-	query := `
-		SELECT title
-		FROM pages
-		WHERE fetch_status = 'success' AND created_at > ?
-		ORDER BY id
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, since.Format(time.RFC3339))
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT title FROM pages WHERE fetch_status = 'success' AND created_at > ? ORDER BY id
+	`, since.Format(time.RFC3339))
 	if err != nil {
 		return 0, fmt.Errorf("failed to query new pages: %w", err)
 	}
@@ -250,7 +207,6 @@ func (s *Syncer) syncNewNodes(ctx context.Context, since time.Time, batchSize in
 		if err := rows.Scan(&title); err != nil {
 			return totalCreated, fmt.Errorf("failed to scan row: %w", err)
 		}
-
 		batch = append(batch, title)
 
 		if len(batch) >= batchSize {
@@ -274,15 +230,13 @@ func (s *Syncer) syncNewNodes(ctx context.Context, since time.Time, batchSize in
 
 // syncNewEdges syncs links created after the given timestamp
 func (s *Syncer) syncNewEdges(ctx context.Context, since time.Time, batchSize int) (int64, error) {
-	query := `
+	rows, err := s.db.QueryContext(ctx, `
 		SELECT p.title AS source_title, l.target_title
 		FROM links l
 		JOIN pages p ON p.id = l.source_id
 		WHERE p.fetch_status = 'success' AND l.created_at > ?
 		ORDER BY l.id
-	`
-
-	rows, err := s.db.QueryContext(ctx, query, since.Format(time.RFC3339))
+	`, since.Format(time.RFC3339))
 	if err != nil {
 		return 0, fmt.Errorf("failed to query new links: %w", err)
 	}
@@ -296,11 +250,7 @@ func (s *Syncer) syncNewEdges(ctx context.Context, since time.Time, batchSize in
 		if err := rows.Scan(&sourceTitle, &targetTitle); err != nil {
 			return totalCreated, fmt.Errorf("failed to scan row: %w", err)
 		}
-
-		batch = append(batch, EdgeInput{
-			SourceTitle: sourceTitle,
-			TargetTitle: targetTitle,
-		})
+		batch = append(batch, EdgeInput{SourceTitle: sourceTitle, TargetTitle: targetTitle})
 
 		if len(batch) >= batchSize {
 			if err := s.client.CreateEdgesBatch(ctx, batch); err != nil {
@@ -323,38 +273,31 @@ func (s *Syncer) syncNewEdges(ctx context.Context, since time.Time, batchSize in
 
 // VerifySync compares counts between SQLite and Neo4j to check consistency
 func (s *Syncer) VerifySync(ctx context.Context) error {
-	s.logger.Println("Verifying sync consistency...")
+	slog.Info("verifying sync consistency")
 
-	// Get SQLite counts
 	var sqliteNodes, sqliteEdges int64
-
-	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pages WHERE fetch_status = 'success'").Scan(&sqliteNodes)
-	if err != nil {
-		return fmt.Errorf("failed to count SQLite nodes: %w", err)
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM pages WHERE fetch_status = 'success'").Scan(&sqliteNodes); err != nil {
+		return fmt.Errorf("failed to count sqlite nodes: %w", err)
+	}
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM links").Scan(&sqliteEdges); err != nil {
+		return fmt.Errorf("failed to count sqlite edges: %w", err)
 	}
 
-	err = s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM links").Scan(&sqliteEdges)
-	if err != nil {
-		return fmt.Errorf("failed to count SQLite edges: %w", err)
-	}
-
-	// Get Neo4j counts
 	neo4jStats, err := s.client.GetStats(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get Neo4j stats: %w", err)
+		return fmt.Errorf("failed to get neo4j stats: %w", err)
 	}
 
-	s.logger.Printf("SQLite: %d nodes, %d edges", sqliteNodes, sqliteEdges)
-	s.logger.Printf("Neo4j:  %d nodes, %d edges", neo4jStats.NodeCount, neo4jStats.EdgeCount)
+	slog.Info("sqlite counts", "nodes", sqliteNodes, "edges", sqliteEdges)
+	slog.Info("neo4j counts", "nodes", neo4jStats.NodeCount, "edges", neo4jStats.EdgeCount)
 
 	if sqliteNodes != neo4jStats.NodeCount {
-		return fmt.Errorf("node count mismatch: SQLite has %d, Neo4j has %d", sqliteNodes, neo4jStats.NodeCount)
+		return fmt.Errorf("node count mismatch: sqlite has %d, neo4j has %d", sqliteNodes, neo4jStats.NodeCount)
 	}
-
 	if sqliteEdges != neo4jStats.EdgeCount {
-		return fmt.Errorf("edge count mismatch: SQLite has %d, Neo4j has %d", sqliteEdges, neo4jStats.EdgeCount)
+		return fmt.Errorf("edge count mismatch: sqlite has %d, neo4j has %d", sqliteEdges, neo4jStats.EdgeCount)
 	}
 
-	s.logger.Println("Sync verification passed!")
+	slog.Info("sync verification passed")
 	return nil
 }
