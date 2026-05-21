@@ -48,6 +48,9 @@ func New(c *cache.Cache, f *fetcher.Fetcher, cfg Config) *Scraper {
 	}
 }
 
+// BatchSize returns the configured batch size.
+func (s *Scraper) BatchSize() int { return s.cfg.BatchSize }
+
 func (s *Scraper) Crawl(ctx context.Context, seeds []string) (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}

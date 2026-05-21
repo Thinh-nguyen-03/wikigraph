@@ -1,9 +1,11 @@
-package database
+package database_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
 )
 
 func TestOpen(t *testing.T) {
@@ -15,8 +17,7 @@ func TestOpen(t *testing.T) {
 
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	// Open the database
-	db, err := Open(dbPath)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("opening database: %v", err)
 	}
@@ -59,7 +60,7 @@ func TestMigrate(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-	db, err := Open(dbPath)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("opening database: %v", err)
 	}
@@ -92,9 +93,10 @@ func TestMigrate(t *testing.T) {
 		t.Fatalf("getting page id: %v", err)
 	}
 
+	// migration 4 removed anchor_text — insert only source_id and target_title
 	_, err = db.Exec(`
-		INSERT INTO links (source_id, target_title, anchor_text)
-		VALUES (?, 'Target Page', 'click here')
+		INSERT INTO links (source_id, target_title)
+		VALUES (?, 'Target Page')
 	`, pageID)
 	if err != nil {
 		t.Fatalf("inserting into links: %v", err)
@@ -127,8 +129,7 @@ func TestMigrate_CheckConstraints(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, err := Open(dbPath)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("opening database: %v", err)
 	}
@@ -138,10 +139,7 @@ func TestMigrate_CheckConstraints(t *testing.T) {
 		t.Fatalf("running migrations: %v", err)
 	}
 
-	_, err = db.Exec(`
-		INSERT INTO pages (title, fetch_status)
-		VALUES ('Test', 'invalid_status')
-	`)
+	_, err = db.Exec(`INSERT INTO pages (title, fetch_status) VALUES ('Test', 'invalid_status')`)
 	if err == nil {
 		t.Error("expected error for invalid fetch_status, got nil")
 	}
@@ -154,10 +152,7 @@ func TestMigrate_CheckConstraints(t *testing.T) {
 		t.Error("expected error for redirect without redirect_to, got nil")
 	}
 
-	_, err = db.Exec(`
-		INSERT INTO pages (title, fetch_status)
-		VALUES ('Test Success', 'success')
-	`)
+	_, err = db.Exec(`INSERT INTO pages (title, fetch_status) VALUES ('Test Success', 'success')`)
 	if err == nil {
 		t.Error("expected error for success without fetched_at, got nil")
 	}
@@ -170,10 +165,7 @@ func TestMigrate_CheckConstraints(t *testing.T) {
 		t.Errorf("valid redirect failed: %v", err)
 	}
 
-	_, err = db.Exec(`
-		INSERT INTO pages (title, fetch_status)
-		VALUES ('Pending Page', 'pending')
-	`)
+	_, err = db.Exec(`INSERT INTO pages (title, fetch_status) VALUES ('Pending Page', 'pending')`)
 	if err != nil {
 		t.Errorf("pending page failed: %v", err)
 	}
@@ -187,8 +179,7 @@ func TestStats(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	dbPath := filepath.Join(tmpDir, "test.db")
-
-	db, err := Open(dbPath)
+	db, err := database.Open(dbPath)
 	if err != nil {
 		t.Fatalf("opening database: %v", err)
 	}

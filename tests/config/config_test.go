@@ -1,10 +1,12 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/Thinh-nguyen-03/wikigraph/internal/config"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -18,7 +20,7 @@ func TestLoad_Defaults(t *testing.T) {
 	os.Chdir(tmpDir)
 	defer os.Chdir(origDir)
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -67,7 +69,7 @@ log:
 	os.Chdir(tmpDir)
 	defer os.Chdir(origDir)
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -102,7 +104,7 @@ func TestLoad_EnvOverride(t *testing.T) {
 	defer os.Unsetenv("WIKIGRAPH_DATABASE_PATH")
 	defer os.Unsetenv("WIKIGRAPH_LOG_LEVEL")
 
-	cfg, err := Load()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}

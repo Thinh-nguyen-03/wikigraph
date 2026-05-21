@@ -99,7 +99,7 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 		return result
 	}
 
-	pageURL := f.buildURL(title)
+	pageURL := f.BuildURL(title)
 
 	req := &pendingRequest{
 		result: result,
@@ -129,7 +129,7 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 		return result
 	}
 
-	redirectTo := detectRedirect(pageURL, req.finalURL)
+	redirectTo := DetectRedirect(pageURL, req.finalURL)
 	if redirectTo != "" {
 		result.RedirectTo = redirectTo
 		return result
@@ -147,12 +147,15 @@ func (f *Fetcher) Fetch(ctx context.Context, title string) *Result {
 	return result
 }
 
-func (f *Fetcher) buildURL(title string) string {
+// BuildURL returns the Wikipedia URL for the given page title.
+func (f *Fetcher) BuildURL(title string) string {
 	encoded := url.PathEscape(strings.ReplaceAll(title, " ", "_"))
 	return fmt.Sprintf("https://en.wikipedia.org/wiki/%s", encoded)
 }
 
-func detectRedirect(originalURL, finalURL string) string {
+// DetectRedirect returns the redirect target title if the final URL differs from
+// the original, or an empty string if there was no redirect.
+func DetectRedirect(originalURL, finalURL string) string {
 	if originalURL == finalURL {
 		return ""
 	}

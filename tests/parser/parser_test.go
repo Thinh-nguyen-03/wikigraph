@@ -1,10 +1,12 @@
-package parser
+package parser_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/PuerkitoBio/goquery"
+
+	"github.com/Thinh-nguyen-03/wikigraph/internal/parser"
 )
 
 func TestExtractLinks(t *testing.T) {
@@ -20,7 +22,7 @@ func TestExtractLinks(t *testing.T) {
 	</html>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 3 {
 		t.Fatalf("got %d links, want 3", len(links))
@@ -48,7 +50,7 @@ func TestExtractLinks_DeduplicatesLinks(t *testing.T) {
 	</div>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Errorf("got %d links, want 1 (deduplicated)", len(links))
@@ -70,7 +72,7 @@ func TestExtractLinks_ExcludesNamespaces(t *testing.T) {
 	</div>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Errorf("got %d links, want 1 (only real article)", len(links))
@@ -88,7 +90,7 @@ func TestExtractLinks_ExcludesDisambiguation(t *testing.T) {
 	</div>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Errorf("got %d links, want 1", len(links))
@@ -102,7 +104,7 @@ func TestExtractLinks_URLDecodes(t *testing.T) {
 	</div>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Fatalf("got %d links, want 1", len(links))
@@ -121,7 +123,7 @@ func TestExtractLinks_IgnoresExternalLinks(t *testing.T) {
 	</div>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Errorf("got %d links, want 1", len(links))
@@ -145,7 +147,7 @@ func TestExtractLinks_OnlyMainContent(t *testing.T) {
 	</html>`
 
 	doc, _ := goquery.NewDocumentFromReader(strings.NewReader(html))
-	links := ExtractLinks(doc)
+	links := parser.ExtractLinks(doc)
 
 	if len(links) != 1 {
 		t.Errorf("got %d links, want 1 (only main content)", len(links))
@@ -158,7 +160,7 @@ func TestExtractLinks_OnlyMainContent(t *testing.T) {
 func TestExtractLinksFromHTML(t *testing.T) {
 	html := `<div id="mw-content-text"><a href="/wiki/Test">Test</a></div>`
 
-	links, err := ExtractLinksFromHTML(html)
+	links, err := parser.ExtractLinksFromHTML(html)
 	if err != nil {
 		t.Fatalf("ExtractLinksFromHTML error: %v", err)
 	}

@@ -1,4 +1,4 @@
-package scraper
+package scraper_test
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/fetcher"
+	"github.com/Thinh-nguyen-03/wikigraph/internal/scraper"
 )
 
 func setupTest(t *testing.T) (*cache.Cache, func()) {
@@ -37,18 +38,20 @@ func setupTest(t *testing.T) (*cache.Cache, func()) {
 	}
 }
 
-func TestNew(t *testing.T) {
-	c, cleanup := setupTest(t)
-	defer cleanup()
-
-	f := fetcher.New(fetcher.Config{
+func newTestFetcher() *fetcher.Fetcher {
+	return fetcher.New(fetcher.Config{
 		RateLimit:      1.0,
 		RequestTimeout: 5 * time.Second,
 		UserAgent:      "Test",
 		BaseURL:        "https://en.wikipedia.org",
 	})
+}
 
-	s := New(c, f, Config{
+func TestNew(t *testing.T) {
+	c, cleanup := setupTest(t)
+	defer cleanup()
+
+	s := scraper.New(c, newTestFetcher(), scraper.Config{
 		MaxDepth:  3,
 		BatchSize: 10,
 	})
@@ -56,8 +59,8 @@ func TestNew(t *testing.T) {
 	if s == nil {
 		t.Fatal("New returned nil")
 	}
-	if s.cfg.BatchSize != 10 {
-		t.Errorf("BatchSize = %d, want 10", s.cfg.BatchSize)
+	if s.BatchSize() != 10 {
+		t.Errorf("BatchSize = %d, want 10", s.BatchSize())
 	}
 }
 
@@ -65,17 +68,10 @@ func TestNew_DefaultBatchSize(t *testing.T) {
 	c, cleanup := setupTest(t)
 	defer cleanup()
 
-	f := fetcher.New(fetcher.Config{
-		RateLimit:      1.0,
-		RequestTimeout: 5 * time.Second,
-		UserAgent:      "Test",
-		BaseURL:        "https://en.wikipedia.org",
-	})
+	s := scraper.New(c, newTestFetcher(), scraper.Config{MaxDepth: 3})
 
-	s := New(c, f, Config{MaxDepth: 3})
-
-	if s.cfg.BatchSize != 10 {
-		t.Errorf("default BatchSize = %d, want 10", s.cfg.BatchSize)
+	if s.BatchSize() != 10 {
+		t.Errorf("default BatchSize = %d, want 10", s.BatchSize())
 	}
 }
 
@@ -83,14 +79,7 @@ func TestCrawl_ContextCancellation(t *testing.T) {
 	c, cleanup := setupTest(t)
 	defer cleanup()
 
-	f := fetcher.New(fetcher.Config{
-		RateLimit:      1.0,
-		RequestTimeout: 5 * time.Second,
-		UserAgent:      "Test",
-		BaseURL:        "https://en.wikipedia.org",
-	})
-
-	s := New(c, f, Config{MaxDepth: 3, BatchSize: 10})
+	s := scraper.New(c, newTestFetcher(), scraper.Config{MaxDepth: 3, BatchSize: 10})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -106,13 +95,13 @@ func TestCrawl_CreatesSeeds(t *testing.T) {
 	defer cleanup()
 
 	f := fetcher.New(fetcher.Config{
-		RateLimit:      0.1, // Very slow to prevent actual fetches
+		RateLimit:      0.1,
 		RequestTimeout: 1 * time.Second,
 		UserAgent:      "Test",
 		BaseURL:        "https://en.wikipedia.org",
 	})
 
-	s := New(c, f, Config{MaxDepth: 1, BatchSize: 1, MaxPages: 0})
+	s := scraper.New(c, f, scraper.Config{MaxDepth: 1, BatchSize: 1, MaxPages: 0})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

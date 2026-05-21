@@ -1,7 +1,10 @@
-package graph
+package graph_test
 
 import (
+	"context"
 	"testing"
+
+	"github.com/Thinh-nguyen-03/wikigraph/internal/graph"
 )
 
 func TestFindPath(t *testing.T) {
@@ -73,12 +76,12 @@ func TestFindPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := New()
+			g := graph.New()
 			for _, edge := range tt.edges {
 				g.AddEdge(edge[0], edge[1])
 			}
 
-			result := g.FindPath(tt.from, tt.to)
+			result := g.FindPath(context.Background(), tt.from, tt.to)
 
 			if tt.wantPath == nil {
 				if result.Found {
@@ -101,32 +104,29 @@ func TestFindPath(t *testing.T) {
 }
 
 func TestFindPathWithLimit(t *testing.T) {
-	g := New()
+	g := graph.New()
 	// A -> B -> C -> D -> E
 	g.AddEdge("A", "B")
 	g.AddEdge("B", "C")
 	g.AddEdge("C", "D")
 	g.AddEdge("D", "E")
 
-	// Can find with sufficient depth
-	result := g.FindPathWithLimit("A", "E", 4)
+	result := g.FindPathWithLimit(context.Background(), "A", "E", 4)
 	if !result.Found {
 		t.Error("should find path with maxDepth=4")
 	}
 
-	// Cannot find with insufficient depth
-	result = g.FindPathWithLimit("A", "E", 3)
+	result = g.FindPathWithLimit(context.Background(), "A", "E", 3)
 	if result.Found {
 		t.Error("should not find path with maxDepth=3")
 	}
 
-	// Edge case: maxDepth=0 only finds same node
-	result = g.FindPathWithLimit("A", "A", 0)
+	result = g.FindPathWithLimit(context.Background(), "A", "A", 0)
 	if !result.Found {
 		t.Error("should find same node with maxDepth=0")
 	}
 
-	result = g.FindPathWithLimit("A", "B", 0)
+	result = g.FindPathWithLimit(context.Background(), "A", "B", 0)
 	if result.Found {
 		t.Error("should not find neighbor with maxDepth=0")
 	}
@@ -185,12 +185,12 @@ func TestFindPathBidirectional(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := New()
+			g := graph.New()
 			for _, edge := range tt.edges {
 				g.AddEdge(edge[0], edge[1])
 			}
 
-			result := g.FindPathBidirectional(tt.from, tt.to)
+			result := g.FindPathBidirectional(context.Background(), tt.from, tt.to)
 
 			if result.Found != tt.wantFind {
 				t.Errorf("found = %v, want %v", result.Found, tt.wantFind)
@@ -202,15 +202,38 @@ func TestFindPathBidirectional(t *testing.T) {
 	}
 }
 
+func TestFindPath_ContextCancelled(t *testing.T) {
+	g := buildChainGraph(100)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+
+	result := g.FindPath(ctx, "node_0", "node_99")
+	if result.Found {
+		t.Error("cancelled context should not return a found path")
+	}
+}
+
+func TestFindPathBidirectional_ContextCancelled(t *testing.T) {
+	g := buildChainGraph(100)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := g.FindPathBidirectional(ctx, "node_0", "node_99")
+	if result.Found {
+		t.Error("cancelled context should not return a found path")
+	}
+}
+
 func TestPathfinderExploredCount(t *testing.T) {
-	g := New()
-	// Create a wide graph
+	g := graph.New()
 	for i := 0; i < 10; i++ {
 		g.AddEdge("A", string(rune('B'+i)))
 	}
 	g.AddEdge("K", "Z") // K is 'B'+9
 
-	result := g.FindPath("A", "Z")
+	result := g.FindPath(context.Background(), "A", "Z")
 	if !result.Found {
 		t.Fatal("should find path")
 	}
@@ -219,23 +242,11 @@ func TestPathfinderExploredCount(t *testing.T) {
 	}
 }
 
-func equalSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func BenchmarkFindPath_SmallGraph(b *testing.B) {
 	g := buildChainGraph(100)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g.FindPath("node_0", "node_99")
+		g.FindPath(context.Background(), "node_0", "node_99")
 	}
 }
 
@@ -243,7 +254,7 @@ func BenchmarkFindPath_LargeGraph(b *testing.B) {
 	g := buildChainGraph(10000)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g.FindPath("node_0", "node_9999")
+		g.FindPath(context.Background(), "node_0", "node_9999")
 	}
 }
 
@@ -251,12 +262,12 @@ func BenchmarkFindPathBidirectional_LargeGraph(b *testing.B) {
 	g := buildChainGraph(10000)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		g.FindPathBidirectional("node_0", "node_9999")
+		g.FindPathBidirectional(context.Background(), "node_0", "node_9999")
 	}
 }
 
-func buildChainGraph(n int) *Graph {
-	g := NewWithCapacity(n)
+func buildChainGraph(n int) *graph.Graph {
+	g := graph.NewWithCapacity(n)
 	for i := 0; i < n-1; i++ {
 		g.AddEdge(nodeName(i), nodeName(i+1))
 	}
@@ -277,4 +288,16 @@ func itoa(i int) string {
 		i /= 10
 	}
 	return string(b)
+}
+
+func equalSlices(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

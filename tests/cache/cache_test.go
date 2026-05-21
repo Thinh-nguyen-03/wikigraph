@@ -1,10 +1,11 @@
-package cache
+package cache_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/Thinh-nguyen-03/wikigraph/internal/cache"
 	"github.com/Thinh-nguyen-03/wikigraph/internal/database"
 )
 
@@ -36,7 +37,7 @@ func setupTestDB(t *testing.T) (*database.DB, func()) {
 func TestGetPage(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page, err := c.GetPage("Nonexistent")
 	if err != nil {
@@ -61,15 +62,15 @@ func TestGetPage(t *testing.T) {
 	if page.Title != "Test Page" {
 		t.Errorf("Title = %q, want %q", page.Title, "Test Page")
 	}
-	if page.FetchStatus != StatusPending {
-		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, StatusPending)
+	if page.FetchStatus != cache.StatusPending {
+		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, cache.StatusPending)
 	}
 }
 
 func TestGetOrCreatePage(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page1, err := c.GetOrCreatePage("New Page")
 	if err != nil {
@@ -91,21 +92,21 @@ func TestGetOrCreatePage(t *testing.T) {
 func TestUpdatePageStatus(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	_, err := c.CreatePage("Test")
 	if err != nil {
 		t.Fatalf("CreatePage error: %v", err)
 	}
 
-	err = c.UpdatePageStatus("Test", StatusSuccess, "abc123", "")
+	err = c.UpdatePageStatus("Test", cache.StatusSuccess, "abc123", "")
 	if err != nil {
 		t.Fatalf("UpdatePageStatus error: %v", err)
 	}
 
 	page, _ := c.GetPage("Test")
-	if page.FetchStatus != StatusSuccess {
-		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, StatusSuccess)
+	if page.FetchStatus != cache.StatusSuccess {
+		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, cache.StatusSuccess)
 	}
 	if !page.ContentHash.Valid || page.ContentHash.String != "abc123" {
 		t.Errorf("ContentHash = %v, want 'abc123'", page.ContentHash)
@@ -118,21 +119,21 @@ func TestUpdatePageStatus(t *testing.T) {
 func TestUpdatePageStatus_Redirect(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	_, err := c.CreatePage("Einstein")
 	if err != nil {
 		t.Fatalf("CreatePage error: %v", err)
 	}
 
-	err = c.UpdatePageStatus("Einstein", StatusRedirect, "", "Albert Einstein")
+	err = c.UpdatePageStatus("Einstein", cache.StatusRedirect, "", "Albert Einstein")
 	if err != nil {
 		t.Fatalf("UpdatePageStatus error: %v", err)
 	}
 
 	page, _ := c.GetPage("Einstein")
-	if page.FetchStatus != StatusRedirect {
-		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, StatusRedirect)
+	if page.FetchStatus != cache.StatusRedirect {
+		t.Errorf("FetchStatus = %q, want %q", page.FetchStatus, cache.StatusRedirect)
 	}
 	if !page.RedirectTo.Valid || page.RedirectTo.String != "Albert Einstein" {
 		t.Errorf("RedirectTo = %v, want 'Albert Einstein'", page.RedirectTo)
@@ -142,12 +143,12 @@ func TestUpdatePageStatus_Redirect(t *testing.T) {
 func TestGetPendingPages(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	c.CreatePage("Page1")
 	c.CreatePage("Page2")
 	c.CreatePage("Page3")
-	c.UpdatePageStatus("Page2", StatusSuccess, "", "")
+	c.UpdatePageStatus("Page2", cache.StatusSuccess, "", "")
 
 	pages, err := c.GetPendingPages(10)
 	if err != nil {
@@ -161,11 +162,11 @@ func TestGetPendingPages(t *testing.T) {
 func TestAddLinks(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page, _ := c.CreatePage("Source")
 
-	links := []Link{
+	links := []cache.Link{
 		{TargetTitle: "Target1"},
 		{TargetTitle: "Target2"},
 		{TargetTitle: "Target3"},
@@ -188,11 +189,11 @@ func TestAddLinks(t *testing.T) {
 func TestAddLinks_Duplicates(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page, _ := c.CreatePage("Source")
 
-	links := []Link{{TargetTitle: "Target"}}
+	links := []cache.Link{{TargetTitle: "Target"}}
 	c.AddLinks(page.ID, links)
 	c.AddLinks(page.ID, links)
 
@@ -205,14 +206,14 @@ func TestAddLinks_Duplicates(t *testing.T) {
 func TestGetIncomingLinks(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page1, _ := c.CreatePage("Source1")
 	page2, _ := c.CreatePage("Source2")
 	c.CreatePage("Target")
 
-	c.AddLinks(page1.ID, []Link{{TargetTitle: "Target"}})
-	c.AddLinks(page2.ID, []Link{{TargetTitle: "Target"}})
+	c.AddLinks(page1.ID, []cache.Link{{TargetTitle: "Target"}})
+	c.AddLinks(page2.ID, []cache.Link{{TargetTitle: "Target"}})
 
 	incoming, err := c.GetIncomingLinks("Target")
 	if err != nil {
@@ -226,7 +227,7 @@ func TestGetIncomingLinks(t *testing.T) {
 func TestEnsureTargetPagesExist(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	c.CreatePage("Existing")
 
@@ -246,10 +247,10 @@ func TestEnsureTargetPagesExist(t *testing.T) {
 func TestDeleteLinksFromPage(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
-	c := New(db)
+	c := cache.New(db)
 
 	page, _ := c.CreatePage("Source")
-	c.AddLinks(page.ID, []Link{{TargetTitle: "T1"}, {TargetTitle: "T2"}})
+	c.AddLinks(page.ID, []cache.Link{{TargetTitle: "T1"}, {TargetTitle: "T2"}})
 
 	err := c.DeleteLinksFromPage(page.ID)
 	if err != nil {
