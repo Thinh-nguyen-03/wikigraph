@@ -1,5 +1,7 @@
 package graph
 
+import "context"
+
 type PathResult struct {
 	Found    bool
 	Path     []string
@@ -47,16 +49,11 @@ func (q *nodeQueue) len() int {
 	return q.tail - q.head
 }
 
-func (q *nodeQueue) reset() {
-	q.head = 0
-	q.tail = 0
+func (g *Graph) FindPath(ctx context.Context, from, to string) PathResult {
+	return g.FindPathWithLimit(ctx, from, to, -1)
 }
 
-func (g *Graph) FindPath(from, to string) PathResult {
-	return g.FindPathWithLimit(from, to, -1)
-}
-
-func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
+func (g *Graph) FindPathWithLimit(ctx context.Context, from, to string, maxDepth int) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -86,6 +83,9 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 	for queue.len() > 0 {
 		if maxDepth >= 0 && depth >= maxDepth {
 			break
+		}
+		if ctx.Err() != nil {
+			return PathResult{Explored: explored}
 		}
 
 		for i := 0; i < currentLevelCount; i++ {
@@ -123,11 +123,11 @@ func (g *Graph) FindPathWithLimit(from, to string, maxDepth int) PathResult {
 	return PathResult{Explored: explored}
 }
 
-func (g *Graph) FindPathBidirectional(from, to string) PathResult {
-	return g.FindPathBidirectionalWithLimit(from, to, -1)
+func (g *Graph) FindPathBidirectional(ctx context.Context, from, to string) PathResult {
+	return g.FindPathBidirectionalWithLimit(ctx, from, to, -1)
 }
 
-func (g *Graph) FindPathBidirectionalWithLimit(from, to string, maxDepth int) PathResult {
+func (g *Graph) FindPathBidirectionalWithLimit(ctx context.Context, from, to string, maxDepth int) PathResult {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -156,6 +156,9 @@ func (g *Graph) FindPathBidirectionalWithLimit(from, to string, maxDepth int) Pa
 	for len(queueF) > 0 && len(queueB) > 0 {
 		if maxDepth >= 0 && depth >= maxDepth {
 			break
+		}
+		if ctx.Err() != nil {
+			return PathResult{Explored: explored}
 		}
 
 		if len(queueF) <= len(queueB) {

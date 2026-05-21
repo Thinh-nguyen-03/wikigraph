@@ -94,9 +94,9 @@ func runPath(cmd *cobra.Command, args []string) error {
 
 	if bidirectional {
 		algorithm = "bidirectional"
-		result = g.FindPathBidirectional(from, to)
+		result = g.FindPathBidirectional(cmd.Context(), from, to)
 	} else {
-		result = g.FindPathWithLimit(from, to, pathMaxDepth)
+		result = g.FindPathWithLimit(cmd.Context(), from, to, pathMaxDepth)
 	}
 	searchDuration := time.Since(searchStart)
 
