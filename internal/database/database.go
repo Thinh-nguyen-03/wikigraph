@@ -80,6 +80,7 @@ func (db *DB) Migrate() error {
 		{2, "migrations/002_optimization_indexes.sql", "optimization_indexes"},
 		{3, "migrations/003_graph_optimization.sql", "graph_optimization"},
 		{4, "migrations/004_remove_anchor_text.sql", "remove_anchor_text"},
+		{5, "migrations/005_restore_covering_index.sql", "restore_covering_index"},
 	}
 
 	var currentVersion int
