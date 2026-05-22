@@ -186,8 +186,9 @@ func (gs *GraphService) periodicRefresh(ctx context.Context) {
 	ticker := time.NewTicker(gs.config.RefreshInterval)
 	defer ticker.Stop()
 
-	// Track when we last updated
-	var lastUpdate time.Time
+	// Track when we last updated; start from now so the first refresh only
+	// picks up changes that occurred after the server started, not all history.
+	lastUpdate := time.Now()
 
 	for {
 		select {

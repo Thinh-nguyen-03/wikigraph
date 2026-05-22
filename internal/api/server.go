@@ -100,6 +100,20 @@ func (s *Server) Start(ctx context.Context) error {
 		WriteTimeout: s.config.WriteTimeout,
 	}
 
+	// Evict stale crawl jobs every hour, keeping entries for 24 hours.
+	go func() {
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.cleanupOldJobs(24 * time.Hour)
+			}
+		}
+	}()
+
 	// Start server in goroutine
 	errCh := make(chan error, 1)
 	go func() {
@@ -173,6 +187,17 @@ func (s *Server) IsNeo4jEnabled() bool {
 // Neo4jClient returns the Neo4j client if available.
 func (s *Server) Neo4jClient() *neostore.Client {
 	return s.neo4jClient
+}
+
+// cleanupOldJobs deletes crawl job entries older than maxAge.
+func (s *Server) cleanupOldJobs(maxAge time.Duration) {
+	cutoff := time.Now().Add(-maxAge)
+	s.jobs.Range(func(key, value any) bool {
+		if job, ok := value.(*CrawlJobStatus); ok && job.StartedAt.Before(cutoff) {
+			s.jobs.Delete(key)
+		}
+		return true
+	})
 }
 
 // getCachedNeo4jStats returns Neo4j stats from a 60-second cache so health checks

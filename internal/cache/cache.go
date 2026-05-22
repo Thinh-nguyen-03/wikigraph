@@ -88,14 +88,10 @@ func (c *Cache) CreatePage(title string) (*Page, error) {
 }
 
 func (c *Cache) GetOrCreatePage(title string) (*Page, error) {
-	page, err := c.GetPage(title)
-	if err != nil {
-		return nil, fmt.Errorf("checking existing page: %w", err)
+	if _, err := c.db.Exec(`INSERT OR IGNORE INTO pages (title) VALUES (?)`, title); err != nil {
+		return nil, fmt.Errorf("upserting page: %w", err)
 	}
-	if page != nil {
-		return page, nil
-	}
-	return c.CreatePage(title)
+	return c.GetPage(title)
 }
 
 func (c *Cache) UpdatePageStatus(title string, status FetchStatus, contentHash, redirectTo string) error {

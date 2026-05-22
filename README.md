@@ -163,14 +163,14 @@ Full API documentation: [docs/api-reference.md](docs/api-reference.md)
                      │   Cache    │ ──► SQLite (pages, links)
                      └─────┬──────┘
                            │
-               ┌───────────┴───────────┐
-               │                       │
-        ┌──────▼──────┐        ┌───────▼──────┐
+               ┌───────────┴────────────┐
+               │                        │
+        ┌──────▼───────┐        ┌───────▼──────┐
         │ GraphService │        │   neostore   │ (optional)
         │  (in-memory) │        │   Neo4j DB   │
-        └──────┬──────┘        └───────┬──────┘
-               │                       │
-               └───────────┬───────────┘
+        └──────┬───────┘        └───────┬──────┘
+               │                        │
+               └───────────┬────────────┘
                            │
                      ┌─────▼──────┐
                      │  REST API  │ ──► ?backend=auto|neo4j|memory
